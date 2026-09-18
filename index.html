@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stamp POS</title>
+<title>Stamp Sales</title>
 <meta name="description" content="Desktop point-of-sale tracker for stamps, backed by Google Sheets via Apps Script.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f3f4f6;
@@ -51,9 +54,10 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
-    font-size: 15px;
-    line-height: 1.45;
+    font-family: "EB Garamond", Garamond, "Times New Roman", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.4;
+    font-variant-numeric: lining-nums tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
   button { font: inherit; color: inherit; cursor: pointer; }
@@ -64,8 +68,10 @@
 
   /* Header */
   .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-  .brand h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
-  .brand p { margin: 4px 0 0; color: var(--muted); }
+  .brand { display: flex; align-items: center; gap: 16px; }
+  .brand img { width: 56px; height: auto; flex: none; }
+  .brand h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+  .brand p { margin: 3px 0 0; color: var(--muted); font-style: italic; }
   .header-right { display: flex; align-items: center; gap: 14px; }
   .status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 13px; font-weight: 500; }
   .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
@@ -86,7 +92,7 @@
   .banner code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
 
   /* Cards */
-  .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
+  .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 12px; }
   .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-bottom: 30px; }
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -96,7 +102,7 @@
   .card.has-qty { border-color: var(--accent); }
   .card.out { opacity: .72; }
   .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .card-name { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .card-name { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
   .card-price { font-size: 15px; color: var(--muted); margin-top: 2px; }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
   .badge.out { background: var(--danger-soft); color: var(--danger); }
@@ -176,7 +182,14 @@
   .bar-stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .bar-stat .v.total { font-size: 30px; letter-spacing: -0.02em; }
   .bar-spacer { flex: 1; }
-  .bar-pay { font-size: 14px; color: var(--muted); }
+  .bar-buyer { display: flex; flex-direction: column; gap: 4px; min-width: 260px; }
+  .bar-buyer label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .bar-buyer input { height: 42px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); font-size: 16px; }
+  .bar-buyer input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .bar-buyer input:disabled { opacity: .5; }
+  .edit-buyer { height: 34px; width: 150px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 14px; }
+  .edit-buyer:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .bar-pay { font-size: 15px; color: var(--muted); }
   .bar-pay strong { color: var(--text); }
   .btn-sell {
     min-width: 260px; height: 62px; padding: 0 30px; border-radius: 12px; border: 0;
@@ -217,8 +230,11 @@
 <div class="app">
   <header class="header">
     <div class="brand">
-      <h1>Stamp POS</h1>
-      <p>Cashier · stock synced with Google Sheets</p>
+      <img src="data:image/webp;base64,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" alt="Order of Malta" width="56" height="64">
+      <div>
+        <h1>Stamp Sales</h1>
+        <p>Order of Malta · Grand Priory of Bohemia · stock synced with Google Sheets</p>
+      </div>
     </div>
     <div class="header-right">
       <div class="session" title="This browser session only">
@@ -265,12 +281,13 @@
           <th class="num" id="salesH1">Stamp 2</th>
           <th class="num" id="salesH2">Stamp 3</th>
           <th>Payment</th>
+          <th>Buyer</th>
           <th class="num">Total</th>
           <th>Status</th>
           <th></th>
         </tr>
       </thead>
-      <tbody id="salesBody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
+      <tbody id="salesBody"><tr><td class="empty" colspan="9">Loading…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -279,6 +296,10 @@
   <div class="bar-inner">
     <div class="bar-stat"><span class="k">Items</span><span class="v" id="barCount">0</span></div>
     <div class="bar-stat"><span class="k">Total</span><span class="v total" id="barTotal">–</span></div>
+    <div class="bar-buyer">
+      <label for="buyerInput">Buyer (optional)</label>
+      <input id="buyerInput" type="text" maxlength="80" placeholder="Name of the buyer" autocomplete="off">
+    </div>
     <div class="bar-spacer"></div>
     <div class="bar-pay">Paying by <strong id="barPay">Cash</strong></div>
     <button class="btn-sell" id="sellBtn" type="button" disabled>
@@ -320,7 +341,7 @@
   const state = {
     items: [],                 // { name, price, stock, qty }
     sales: [],                 // recent sales from the sheet: { id, timestamp, quantities, paymentMethod, total, status }
-    editing: null,             // { id, quantities, paymentMethod } while a sale row is being edited
+    editing: null,             // { id, quantities, paymentMethod, buyer } while a sale row is being edited
     payment: 'Cash',
     busy: false,
     demo: !CONFIG.SCRIPT_URL,
@@ -333,7 +354,7 @@
     refreshBtn: $('refreshBtn'), payment: $('payment'), barCount: $('barCount'), barTotal: $('barTotal'),
     barPay: $('barPay'), sellBtn: $('sellBtn'), sellLabel: $('sellLabel'), toast: $('toast'),
     sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn'),
-    salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')]
+    salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')], buyerInput: $('buyerInput')
   };
   let cardRefs = [];
 
@@ -455,6 +476,7 @@
     els.sellBtn.classList.toggle('loading', state.busy);
     els.sellLabel.textContent = state.busy ? 'Saving sale…' : 'Mark as Sold';
     els.refreshBtn.disabled = state.busy;
+    els.buyerInput.disabled = state.busy;
     els.sessionSales.textContent = state.session.sales;
     els.sessionRevenue.textContent = state.session.sales ? money(state.session.revenue) : '–';
   }
@@ -484,7 +506,7 @@
     const body = els.salesBody;
     body.innerHTML = '';
     if (!state.sales.length) {
-      const tr = el('tr'); const td = el('td', 'empty', 'No sales yet'); td.colSpan = 8; tr.appendChild(td); body.appendChild(tr);
+      const tr = el('tr'); const td = el('td', 'empty', 'No sales yet'); td.colSpan = 9; tr.appendChild(td); body.appendChild(tr);
       return;
     }
     state.sales.forEach(sale => {
@@ -529,6 +551,19 @@
       } else tdPay.textContent = sale.paymentMethod;
       tr.appendChild(tdPay);
 
+      const tdBuyer = el('td');
+      if (editing) {
+        const inp = el('input', 'edit-buyer');
+        inp.type = 'text'; inp.maxLength = 80; inp.placeholder = 'Buyer'; inp.value = state.editing.buyer || '';
+        inp.disabled = state.busy;
+        inp.addEventListener('input', () => { state.editing.buyer = inp.value; });
+        tdBuyer.appendChild(inp);
+      } else {
+        tdBuyer.textContent = sale.buyer || '—';
+        if (!sale.buyer) tdBuyer.style.color = 'var(--muted)';
+      }
+      tr.appendChild(tdBuyer);
+
       tr.appendChild(el('td', 'num', money(sale.total)));
 
       const tdStatus = el('td');
@@ -544,10 +579,15 @@
         tdAct.appendChild(save); tdAct.appendChild(cancel);
       } else if (!isVoid) {
         const edit = el('button', 'btn-sm', 'Edit'); edit.type = 'button'; edit.disabled = state.busy || !!state.editing;
-        edit.addEventListener('click', () => { state.editing = { id: sale.id, quantities: sale.quantities.slice(), paymentMethod: sale.paymentMethod }; renderSales(); });
+        edit.addEventListener('click', () => { state.editing = { id: sale.id, quantities: sale.quantities.slice(), paymentMethod: sale.paymentMethod, buyer: sale.buyer || '' }; renderSales(); });
         const vd = el('button', 'btn-sm danger', 'Void'); vd.type = 'button'; vd.disabled = state.busy || !!state.editing;
         vd.addEventListener('click', () => voidSale(sale));
         tdAct.appendChild(edit); tdAct.appendChild(vd);
+      } else {
+        const del = el('button', 'btn-sm danger', 'Delete'); del.type = 'button'; del.disabled = state.busy || !!state.editing;
+        del.title = 'Remove this voided sale from the list and the spreadsheet';
+        del.addEventListener('click', () => deleteSale(sale));
+        tdAct.appendChild(del);
       }
       tr.appendChild(tdAct);
       body.appendChild(tr);
@@ -594,14 +634,20 @@
     runAction({ action: 'void', saleId: sale.id }, 'Sale voided · ' + money(sale.total), summary + ' returned to stock');
   }
 
+  function deleteSale(sale) {
+    if (sale.status !== 'VOID') return;
+    if (!window.confirm('Delete this voided sale permanently?\n\n' + sale.id + ' \u00b7 ' + fmtTime(sale.timestamp) + (sale.buyer ? ' \u00b7 ' + sale.buyer : '') + '\n\nIt will be removed from this list and from the Sales Log sheet. Stock is not affected (it was already restored when the sale was voided).')) return;
+    runAction({ action: 'delete', saleId: sale.id }, 'Sale deleted', 'Removed from the Sales Log');
+  }
+
   function saveEdit(sale) {
     const e = state.editing;
     if (!e) return;
     const total = e.quantities.reduce((s, q) => s + q, 0);
     if (total === 0) { toast('error', 'Quantities are all zero', 'Use Void to cancel the whole sale.', 4000); return; }
-    const same = e.quantities.every((q, i) => q === sale.quantities[i]) && e.paymentMethod === sale.paymentMethod;
+    const same = e.quantities.every((q, i) => q === sale.quantities[i]) && e.paymentMethod === sale.paymentMethod && (e.buyer || '').trim() === (sale.buyer || '');
     if (same) { state.editing = null; renderSales(); return; }
-    runAction({ action: 'edit', saleId: sale.id, quantities: e.quantities, paymentMethod: e.paymentMethod },
+    runAction({ action: 'edit', saleId: sale.id, quantities: e.quantities, paymentMethod: e.paymentMethod, buyer: (e.buyer || '').trim() },
       'Sale updated', 'Stock adjusted by the difference');
   }
 
@@ -627,8 +673,12 @@
       p.quantities.forEach((q, i) => { state.items[i].stock -= q - sale.quantities[i]; });
       sale.quantities = p.quantities.slice();
       sale.paymentMethod = p.paymentMethod || sale.paymentMethod;
+      if (p.buyer != null) sale.buyer = p.buyer;
       sale.total = sale.quantities.reduce((s, q, i) => s + q * state.items[i].price, 0);
       sale.status = 'EDITED';
+    } else if (p.action === 'delete') {
+      if (sale.status !== 'VOID') return { ok: false, error: 'Only voided sales can be deleted' };
+      demoSales.splice(demoSales.indexOf(sale), 1);
     }
     return demoSnapshot(sale);
   }
@@ -720,6 +770,7 @@
       action: 'sale',
       quantities,
       paymentMethod: state.payment,
+      buyer: els.buyerInput.value.trim(),
       total: Number(t.total.toFixed(2)),
       clientTime: new Date().toISOString(),
       pin: getPin()
@@ -735,7 +786,7 @@
       if (state.demo) {
         await new Promise(r => setTimeout(r, 650));
         const sale = { id: 'S-DEMO' + String(demoSales.length + 1).padStart(3, '0'), timestamp: new Date().toISOString(),
-          quantities: quantities.slice(), paymentMethod: state.payment, total: payload.total, status: 'OK' };
+          quantities: quantities.slice(), paymentMethod: state.payment, buyer: payload.buyer, total: payload.total, status: 'OK' };
         demoSales.unshift(sale);
         data = demoSnapshot(sale);
       } else {
@@ -746,10 +797,11 @@
       // Sync with the authoritative stock + sales list from the sheet (handles concurrent cashiers).
       applyServer(data);
       const saleTotal = (data.sale && Number(data.sale.total)) || t.total;
+      els.buyerInput.value = '';
       state.session.sales += 1;
       state.session.revenue += saleTotal;
       toast('success', 'Sale recorded · ' + money(saleTotal),
-        t.count + ' item' + (t.count === 1 ? '' : 's') + ' · ' + state.payment + (state.demo ? ' (demo, not saved)' : ''));
+        t.count + ' item' + (t.count === 1 ? '' : 's') + ' · ' + state.payment + (payload.buyer ? ' · ' + payload.buyer : '') + (state.demo ? ' (demo, not saved)' : ''));
     } catch (err) {
       // Roll back the optimistic deduction so the cashier can retry.
       state.items.forEach((it, i) => { it.stock = snapshot[i].stock; it.qty = snapshot[i].qty; });

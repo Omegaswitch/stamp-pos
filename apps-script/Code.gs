@@ -4,14 +4,15 @@
  * Bound to a Google Sheet with two tabs:
  *   "Inventory": A=Item Name | B=Unit Price | C=Current Stock   (rows 2–4 = the 3 stamps)
  *   "Sales Log": A=Timestamp | B=Qty Stamp 1 | C=Qty Stamp 2 | D=Qty Stamp 3 | E=Payment Method
- *                | F=Total Amount | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At
+ *                | F=Total Amount | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At | J=Buyer
  *
  * Endpoints (deployed as a Web App, "Execute as: Me", "Who has access: Anyone"):
  *   GET  → { ok, items: [{ name, price, stock }, ×3], sales: [recent sales, newest first] }
  *   POST body (text/plain JSON), all require `pin` when POS_PIN is configured:
- *     { action: "sale", quantities: [q1,q2,q3], paymentMethod }        → records a sale, deducts stock
- *     { action: "void", saleId }                                        → cancels a sale, re-adds its stock
- *     { action: "edit", saleId, quantities: [..], paymentMethod? }      → changes a sale, adjusts stock by the difference
+ *     { action: "sale", quantities: [q1,q2,q3], paymentMethod, buyer? }     → records a sale, deducts stock
+ *     { action: "void", saleId }                                             → cancels a sale, re-adds its stock
+ *     { action: "edit", saleId, quantities: [..], paymentMethod?, buyer? }   → changes a sale, adjusts stock by the difference
+ *     { action: "delete", saleId }                                           → removes a VOIDED sale's row from the log
  *   Every POST answers { ok, items, sales, sale } or { ok:false, error }.
  *
  * Run setupSheets() once from the editor to create both tabs (and to authorise the script).
@@ -21,7 +22,7 @@ var INVENTORY_SHEET = 'Inventory';
 var SALES_SHEET = 'Sales Log';
 var ITEM_COUNT = 3;
 var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
-var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At'];
+var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At', 'Buyer'];
 var SALES_COLS = SALES_HEADERS.length;
 var RECENT_SALES = 15;
 
@@ -65,6 +66,7 @@ function doPost(e) {
     if (action === 'sale') sale = recordSale_(inv, log, body);
     else if (action === 'void') sale = voidSale_(inv, log, body);
     else if (action === 'edit') sale = editSale_(inv, log, body);
+    else if (action === 'delete') sale = deleteSale_(log, body);
     else throw new Error('Unknown action: ' + action);
 
     SpreadsheetApp.flush();
@@ -81,6 +83,7 @@ function doPost(e) {
 function recordSale_(inv, log, body) {
   var quantities = normaliseQuantities_(body.quantities);
   var paymentMethod = checkPayment_(body.paymentMethod);
+  var buyer = cleanBuyer_(body.buyer);
   if (sum_(quantities) === 0) throw new Error('No items in the sale');
 
   var items = readInventoryRows_(inv);
@@ -95,9 +98,9 @@ function recordSale_(inv, log, body) {
 
   var timestamp = new Date();
   var id = newSaleId_();
-  log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total, id, 'OK', '']);
+  log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total, id, 'OK', '', buyer]);
 
-  return { id: id, timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total, status: 'OK' };
+  return { id: id, timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total, status: 'OK', buyer: buyer };
 }
 
 function voidSale_(inv, log, body) {
@@ -121,6 +124,7 @@ function editSale_(inv, log, body) {
   var quantities = normaliseQuantities_(body.quantities);
   if (sum_(quantities) === 0) throw new Error('Quantities are all zero — use Void to cancel the sale');
   var paymentMethod = body.paymentMethod ? checkPayment_(body.paymentMethod) : old.paymentMethod;
+  var buyer = body.buyer != null ? cleanBuyer_(body.buyer) : old.buyer;
 
   // Only the difference moves in or out of stock.
   var items = readInventoryRows_(inv);
@@ -136,10 +140,18 @@ function editSale_(inv, log, body) {
 
   writeStock_(inv, newStock);
   log.getRange(found.row, 2, 1, 5).setValues([[quantities[0], quantities[1], quantities[2], paymentMethod, total]]);
-  log.getRange(found.row, 8, 1, 2).setValues([['EDITED', new Date()]]);
+  log.getRange(found.row, 8, 1, 3).setValues([['EDITED', new Date(), buyer]]);
 
-  old.quantities = quantities; old.paymentMethod = paymentMethod; old.total = total; old.status = 'EDITED';
+  old.quantities = quantities; old.paymentMethod = paymentMethod; old.total = total; old.status = 'EDITED'; old.buyer = buyer;
   return old;
+}
+
+/** Physically removes a voided sale's row. Stock is untouched: voiding already restored it. */
+function deleteSale_(log, body) {
+  var found = findSale_(log, body.saleId);
+  if (found.sale.status !== 'VOID') throw new Error('Only voided sales can be deleted. Void it first.');
+  log.deleteRow(found.row);
+  return found.sale;
 }
 
 // ───────────────────────── Sheet access ─────────────────────────
@@ -179,7 +191,8 @@ function rowToSale_(r, rowNumber) {
     paymentMethod: String(r[4] || ''),
     total: Number(r[5]) || 0,
     status: String(r[7] || 'OK'),
-    updatedAt: toIso_(r[8])
+    updatedAt: toIso_(r[8]),
+    buyer: String(r[9] || '')
   };
 }
 
@@ -215,7 +228,7 @@ function findSale_(log, saleId) {
  * row has a Sale ID (so logs created before this feature can still be voided/edited).
  */
 function ensureSalesLog_(log) {
-  if (String(log.getRange(1, 7).getValue()) !== 'Sale ID') {
+  if (String(log.getRange(1, 7).getValue()) !== 'Sale ID' || String(log.getRange(1, SALES_COLS).getValue()) !== SALES_HEADERS[SALES_COLS - 1]) {
     log.getRange(1, 1, 1, SALES_COLS).setValues([SALES_HEADERS]).setFontWeight('bold');
     log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   }
@@ -254,6 +267,10 @@ function checkPin_(pin) {
   if (String(pin || '').trim() !== String(expected).trim()) {
     throw new Error(pin ? 'Invalid PIN' : 'PIN required');
   }
+}
+
+function cleanBuyer_(value) {
+  return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, 80);
 }
 
 function checkPayment_(value) {
