@@ -3,26 +3,36 @@
  *
  * Bound to a Google Sheet with two tabs:
  *   "Inventory": A=Item Name | B=Unit Price | C=Current Stock   (rows 2–4 = the 3 stamps)
- *   "Sales Log": A=Timestamp | B=Qty Stamp 1 | C=Qty Stamp 2 | D=Qty Stamp 3 | E=Payment Method | F=Total Amount
+ *   "Sales Log": A=Timestamp | B=Qty Stamp 1 | C=Qty Stamp 2 | D=Qty Stamp 3 | E=Payment Method
+ *                | F=Total Amount | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At
  *
  * Endpoints (deployed as a Web App, "Execute as: Me", "Who has access: Anyone"):
- *   GET  → { ok, items: [{ name, price, stock }, ×3] }
- *   POST → body (text/plain JSON): { quantities: [q1, q2, q3], paymentMethod: "Cash" }
- *          → { ok, items: [...updated stock...], sale: { timestamp, quantities, paymentMethod, total } }
+ *   GET  → { ok, items: [{ name, price, stock }, ×3], sales: [recent sales, newest first] }
+ *   POST body (text/plain JSON), all require `pin` when POS_PIN is configured:
+ *     { action: "sale", quantities: [q1,q2,q3], paymentMethod }        → records a sale, deducts stock
+ *     { action: "void", saleId }                                        → cancels a sale, re-adds its stock
+ *     { action: "edit", saleId, quantities: [..], paymentMethod? }      → changes a sale, adjusts stock by the difference
+ *   Every POST answers { ok, items, sales, sale } or { ok:false, error }.
  *
- * Run setupSheets() once from the editor to create both tabs with headers and sample rows.
+ * Run setupSheets() once from the editor to create both tabs (and to authorise the script).
  */
 
 var INVENTORY_SHEET = 'Inventory';
 var SALES_SHEET = 'Sales Log';
 var ITEM_COUNT = 3;
 var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
+var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At'];
+var SALES_COLS = SALES_HEADERS.length;
+var RECENT_SALES = 15;
 
 // ───────────────────────── HTTP handlers ─────────────────────────
 
 function doGet(e) {
   try {
-    return jsonResponse({ ok: true, items: readInventory_() });
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var log = getSheetOrThrow_(ss, SALES_SHEET);
+    ensureSalesLog_(log);
+    return jsonResponse({ ok: true, items: readInventory_(), sales: readSales_(log) });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err && err.message || err) });
   }
@@ -31,56 +41,26 @@ function doGet(e) {
 function doPost(e) {
   var lock = LockService.getScriptLock();
   try {
-    // Serialise concurrent sales so two cashiers can't both sell the last stamp.
+    // Serialise concurrent writes so two cashiers can't both sell the last stamp.
     lock.waitLock(15000);
 
     var body = parseBody_(e);
     checkPin_(body.pin);
-    var quantities = normaliseQuantities_(body.quantities);
-    var paymentMethod = String(body.paymentMethod || '').trim();
-
-    if (ALLOWED_PAYMENTS.indexOf(paymentMethod) === -1) {
-      throw new Error('Invalid payment method: "' + paymentMethod + '"');
-    }
-    var soldCount = quantities.reduce(function (a, b) { return a + b; }, 0);
-    if (soldCount === 0) throw new Error('No items in the sale');
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var inv = getSheetOrThrow_(ss, INVENTORY_SHEET);
     var log = getSheetOrThrow_(ss, SALES_SHEET);
+    ensureSalesLog_(log);
 
-    var range = inv.getRange(2, 1, ITEM_COUNT, 3);   // A2:C4
-    var rows = range.getValues();
-    var total = 0;
+    var action = String(body.action || 'sale');
+    var sale;
+    if (action === 'sale') sale = recordSale_(inv, log, body);
+    else if (action === 'void') sale = voidSale_(inv, log, body);
+    else if (action === 'edit') sale = editSale_(inv, log, body);
+    else throw new Error('Unknown action: ' + action);
 
-    // Validate against live stock before touching any cell.
-    for (var i = 0; i < ITEM_COUNT; i++) {
-      var name = String(rows[i][0] || ('Item ' + (i + 1)));
-      var price = Number(rows[i][1]) || 0;
-      var stock = Math.max(0, Math.floor(Number(rows[i][2]) || 0));
-      if (quantities[i] > stock) {
-        throw new Error('Not enough stock for ' + name + ' (requested ' + quantities[i] + ', available ' + stock + ')');
-      }
-      total += quantities[i] * price;
-    }
-    total = Math.round(total * 100) / 100;
-
-    // Subtract sold quantities directly from the Current Stock cells (column C).
-    var newStock = rows.map(function (row, i) {
-      return [Math.max(0, Math.floor(Number(row[2]) || 0)) - quantities[i]];
-    });
-    inv.getRange(2, 3, ITEM_COUNT, 1).setValues(newStock);
-
-    // Append the transaction row.
-    var timestamp = new Date();
-    log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total]);
     SpreadsheetApp.flush();
-
-    return jsonResponse({
-      ok: true,
-      items: readInventory_(),
-      sale: { timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total }
-    });
+    return jsonResponse({ ok: true, items: readInventory_(), sales: readSales_(log), sale: sale });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err && err.message || err) });
   } finally {
@@ -88,11 +68,75 @@ function doPost(e) {
   }
 }
 
-// ───────────────────────── Helpers ─────────────────────────
+// ───────────────────────── Actions ─────────────────────────
 
-function readInventory_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var inv = getSheetOrThrow_(ss, INVENTORY_SHEET);
+function recordSale_(inv, log, body) {
+  var quantities = normaliseQuantities_(body.quantities);
+  var paymentMethod = checkPayment_(body.paymentMethod);
+  if (sum_(quantities) === 0) throw new Error('No items in the sale');
+
+  var items = readInventoryRows_(inv);
+  for (var i = 0; i < ITEM_COUNT; i++) {
+    if (quantities[i] > items[i].stock) {
+      throw new Error('Not enough stock for ' + items[i].name + ' (requested ' + quantities[i] + ', available ' + items[i].stock + ')');
+    }
+  }
+  var total = computeTotal_(items, quantities);
+
+  writeStock_(inv, items.map(function (it, i) { return it.stock - quantities[i]; }));
+
+  var timestamp = new Date();
+  var id = newSaleId_();
+  log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total, id, 'OK', '']);
+
+  return { id: id, timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total, status: 'OK' };
+}
+
+function voidSale_(inv, log, body) {
+  var found = findSale_(log, body.saleId);
+  if (found.sale.status === 'VOID') throw new Error('This sale is already voided');
+
+  // Re-add the sold quantities to stock.
+  var items = readInventoryRows_(inv);
+  writeStock_(inv, items.map(function (it, i) { return it.stock + found.sale.quantities[i]; }));
+
+  log.getRange(found.row, 8, 1, 2).setValues([['VOID', new Date()]]);
+  found.sale.status = 'VOID';
+  return found.sale;
+}
+
+function editSale_(inv, log, body) {
+  var found = findSale_(log, body.saleId);
+  var old = found.sale;
+  if (old.status === 'VOID') throw new Error('A voided sale cannot be edited — record a new sale instead');
+
+  var quantities = normaliseQuantities_(body.quantities);
+  if (sum_(quantities) === 0) throw new Error('Quantities are all zero — use Void to cancel the sale');
+  var paymentMethod = body.paymentMethod ? checkPayment_(body.paymentMethod) : old.paymentMethod;
+
+  // Only the difference moves in or out of stock.
+  var items = readInventoryRows_(inv);
+  var newStock = [];
+  for (var i = 0; i < ITEM_COUNT; i++) {
+    var delta = quantities[i] - old.quantities[i];
+    if (delta > items[i].stock) {
+      throw new Error('Not enough stock for ' + items[i].name + ' (need ' + delta + ' more, available ' + items[i].stock + ')');
+    }
+    newStock.push(items[i].stock - delta);
+  }
+  var total = computeTotal_(items, quantities);   // re-priced at current unit prices
+
+  writeStock_(inv, newStock);
+  log.getRange(found.row, 2, 1, 5).setValues([[quantities[0], quantities[1], quantities[2], paymentMethod, total]]);
+  log.getRange(found.row, 8, 1, 2).setValues([['EDITED', new Date()]]);
+
+  old.quantities = quantities; old.paymentMethod = paymentMethod; old.total = total; old.status = 'EDITED';
+  return old;
+}
+
+// ───────────────────────── Sheet access ─────────────────────────
+
+function readInventoryRows_(inv) {
   var rows = inv.getRange(2, 1, ITEM_COUNT, 3).getValues();
   return rows.map(function (row, i) {
     return {
@@ -103,38 +147,79 @@ function readInventory_() {
   });
 }
 
-function parseBody_(e) {
-  var raw = e && e.postData && e.postData.contents;
-  if (!raw) throw new Error('Empty request body');
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    throw new Error('Body is not valid JSON');
-  }
+function readInventory_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  return readInventoryRows_(getSheetOrThrow_(ss, INVENTORY_SHEET));
 }
 
-function normaliseQuantities_(list) {
-  if (!Array.isArray(list)) throw new Error('quantities must be an array of ' + ITEM_COUNT + ' numbers');
-  var out = [];
-  for (var i = 0; i < ITEM_COUNT; i++) {
-    var n = Math.floor(Number(list[i]));
-    if (!isFinite(n) || n < 0) n = 0;
-    out.push(n);
+function writeStock_(inv, stock) {
+  inv.getRange(2, 3, ITEM_COUNT, 1).setValues(stock.map(function (s) { return [Math.max(0, s)]; }));
+}
+
+function computeTotal_(items, quantities) {
+  var total = 0;
+  for (var i = 0; i < ITEM_COUNT; i++) total += quantities[i] * items[i].price;
+  return Math.round(total * 100) / 100;
+}
+
+function rowToSale_(r, rowNumber) {
+  return {
+    row: rowNumber,
+    id: String(r[6] || ''),
+    timestamp: toIso_(r[0]),
+    quantities: [r[1], r[2], r[3]].map(toInt_),
+    paymentMethod: String(r[4] || ''),
+    total: Number(r[5]) || 0,
+    status: String(r[7] || 'OK'),
+    updatedAt: toIso_(r[8])
+  };
+}
+
+/** Newest RECENT_SALES sales, newest first. */
+function readSales_(log) {
+  var last = log.getLastRow();
+  if (last < 2) return [];
+  var n = Math.min(RECENT_SALES, last - 1);
+  var start = last - n + 1;
+  var rows = log.getRange(start, 1, n, SALES_COLS).getValues();
+  return rows.map(function (r, i) { return rowToSale_(r, start + i); })
+             .filter(function (s) { return s.id; })
+             .reverse();
+}
+
+function findSale_(log, saleId) {
+  var id = String(saleId || '').trim();
+  if (!id) throw new Error('saleId is required');
+  var last = log.getLastRow();
+  if (last < 2) throw new Error('Sale not found: ' + id);
+  var ids = log.getRange(2, 7, last - 1, 1).getValues();
+  for (var i = ids.length - 1; i >= 0; i--) {           // newest first: edits are usually recent
+    if (String(ids[i][0]) === id) {
+      var row = i + 2;
+      return { row: row, sale: rowToSale_(log.getRange(row, 1, 1, SALES_COLS).getValues()[0], row) };
+    }
   }
-  return out;
+  throw new Error('Sale not found: ' + id);
 }
 
 /**
- * Optional cashier PIN. Set it in the editor: Project Settings → Script Properties →
- * add property POS_PIN. When it is set, every sale must carry the matching `pin`.
- * (The page is public on GitHub Pages, so this stops strangers from posting sales.)
+ * Makes sure the Sales Log has the ID/Status/Updated columns and that every existing
+ * row has a Sale ID (so logs created before this feature can still be voided/edited).
  */
-function checkPin_(pin) {
-  var expected = PropertiesService.getScriptProperties().getProperty('POS_PIN');
-  if (!expected) return;                                   // no PIN configured
-  if (String(pin || '').trim() !== String(expected).trim()) {
-    throw new Error(pin ? 'Invalid PIN' : 'PIN required');
+function ensureSalesLog_(log) {
+  if (String(log.getRange(1, 7).getValue()) !== 'Sale ID') {
+    log.getRange(1, 1, 1, SALES_COLS).setValues([SALES_HEADERS]).setFontWeight('bold');
+    log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   }
+  var last = log.getLastRow();
+  if (last < 2) return;
+  var rng = log.getRange(2, 7, last - 1, 2);
+  var vals = rng.getValues();
+  var changed = false;
+  vals.forEach(function (r) {
+    if (!r[0]) { r[0] = newSaleId_(); r[1] = r[1] || 'OK'; changed = true; }
+  });
+  if (changed) rng.setValues(vals);
 }
 
 function getSheetOrThrow_(ss, name) {
@@ -143,11 +228,51 @@ function getSheetOrThrow_(ss, name) {
   return sheet;
 }
 
+// ───────────────────────── Validation / helpers ─────────────────────────
+
+function parseBody_(e) {
+  var raw = e && e.postData && e.postData.contents;
+  if (!raw) throw new Error('Empty request body');
+  try { return JSON.parse(raw); } catch (err) { throw new Error('Body is not valid JSON'); }
+}
+
+/**
+ * Optional cashier PIN. Set it in the editor: Project Settings → Script Properties →
+ * add property POS_PIN. When set, every write (sale / void / edit) must carry it.
+ */
+function checkPin_(pin) {
+  var expected = PropertiesService.getScriptProperties().getProperty('POS_PIN');
+  if (!expected) return;
+  if (String(pin || '').trim() !== String(expected).trim()) {
+    throw new Error(pin ? 'Invalid PIN' : 'PIN required');
+  }
+}
+
+function checkPayment_(value) {
+  var p = String(value || '').trim();
+  if (ALLOWED_PAYMENTS.indexOf(p) === -1) throw new Error('Invalid payment method: "' + p + '"');
+  return p;
+}
+
+function normaliseQuantities_(list) {
+  if (!Array.isArray(list)) throw new Error('quantities must be an array of ' + ITEM_COUNT + ' numbers');
+  var out = [];
+  for (var i = 0; i < ITEM_COUNT; i++) out.push(toInt_(list[i]));
+  return out;
+}
+
+function toInt_(v) { var n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; }
+function sum_(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
+function toIso_(v) {
+  if (v instanceof Date && !isNaN(v)) return v.toISOString();
+  return v ? String(v) : '';
+}
+function newSaleId_() { return 'S-' + Utilities.getUuid().replace(/-/g, '').slice(0, 10).toUpperCase(); }
+
 /**
  * JSON output via ContentService. When the Web App is deployed with access "Anyone",
- * Google serves ContentService responses with `Access-Control-Allow-Origin: *`, so
- * browsers on any origin can read them. (Apps Script does not handle OPTIONS preflights,
- * which is why the frontend POSTs with Content-Type text/plain.)
+ * Google serves ContentService responses with `Access-Control-Allow-Origin: *`.
+ * (Apps Script does not handle OPTIONS preflights, which is why the frontend POSTs as text/plain.)
  */
 function jsonResponse(obj) {
   return ContentService
@@ -159,7 +284,7 @@ function jsonResponse(obj) {
 
 /**
  * Creates the "Inventory" and "Sales Log" tabs with headers, sample items and formatting.
- * Safe to re-run: existing tabs are left untouched.
+ * Safe to re-run: existing data is left untouched (missing Sales Log columns are added).
  */
 function setupSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -182,14 +307,14 @@ function setupSheets() {
   var log = ss.getSheetByName(SALES_SHEET);
   if (!log) {
     log = ss.insertSheet(SALES_SHEET);
-    log.getRange('A1:F1')
-      .setValues([['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount']])
-      .setFontWeight('bold');
+    log.getRange(1, 1, 1, SALES_COLS).setValues([SALES_HEADERS]).setFontWeight('bold');
     log.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
     log.getRange('F2:F').setNumberFormat('#,##0.00');
+    log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
     log.setFrozenRows(1);
-    log.autoResizeColumns(1, 6);
+    log.autoResizeColumns(1, SALES_COLS);
   }
+  ensureSalesLog_(log);
 
   // Remove the default empty "Sheet1" if it is still around and unused.
   var def = ss.getSheetByName('Sheet1');
@@ -198,13 +323,18 @@ function setupSheets() {
   Logger.log('Setup complete: "%s" and "%s" are ready.', INVENTORY_SHEET, SALES_SHEET);
 }
 
-/** Quick manual test from the editor: logs the current inventory JSON. */
+/** Quick manual test from the editor: logs the current inventory + recent sales JSON. */
 function testGet() {
   Logger.log(doGet({}).getContent());
 }
 
-/** Quick manual test from the editor: sells 1 of item 1 by Cash and logs the response. */
-function testPost() {
-  var fake = { postData: { contents: JSON.stringify({ quantities: [1, 0, 0], paymentMethod: 'Cash' }) } };
-  Logger.log(doPost(fake).getContent());
+/** Quick manual test from the editor: sells 1 of item 1 by Cash, then voids it again. */
+function testSaleAndVoid() {
+  var pin = PropertiesService.getScriptProperties().getProperty('POS_PIN') || '';
+  var sold = JSON.parse(doPost({ postData: { contents: JSON.stringify({ action: 'sale', quantities: [1, 0, 0], paymentMethod: 'Cash', pin: pin }) } }).getContent());
+  Logger.log(JSON.stringify(sold));
+  if (sold.ok) {
+    var voided = doPost({ postData: { contents: JSON.stringify({ action: 'void', saleId: sold.sale.id, pin: pin }) } }).getContent();
+    Logger.log(voided);
+  }
 }

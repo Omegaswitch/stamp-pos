@@ -68,6 +68,10 @@ Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...
 
 ## Day-to-day
 
+- **Sold something by mistake?** The **Recent sales** table under the payment buttons lists the last 15 sales.
+  - **Edit** → change the quantities / payment method → **Save**. Stock moves by the difference only; the total is re-priced at current unit prices. The row is marked `EDITED`.
+  - **Void** → confirm → the full quantities go back on the shelf and the row is marked `VOID`. Nothing is ever deleted from the log, so the sheet stays a full audit trail.
+  - Both need the cashier PIN if one is set.
 - Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
 - Edit `index.html` → push → Pages redeploys.
 - Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
@@ -88,9 +92,11 @@ Open `index.html` directly and set `CONFIG.SCRIPT_URL` by hand (keep the `// @in
 | GET works, POST fails with CORS | Keep the frontend's `Content-Type: text/plain`. Apps Script can't answer preflight requests, so `application/json` gets blocked. |
 | `Missing sheet tab "Inventory"` | Run `setupSheets()` once (step 4.3). |
 | "Not enough stock" on sale | Someone else sold it first — **Refresh stock**. The server validates against the live sheet. |
+| A sale is missing from Recent sales | Only the last 15 are shown; older ones can be corrected directly in the **Sales Log** tab (adjust Inventory stock by hand too). |
 
 ## Security notes
 
 - The repo and the Pages site are public; the Apps Script `/exec` URL is visible in the page source. That's unavoidable for a static page — the `POS_PIN` is what gates writes. Reads (stock + prices) are open to anyone with the URL.
 - `CLASPRC_JSON` is a Google OAuth token for your account, scoped to Apps Script. Keep it as a GitHub secret only; never commit `.clasprc.json` or `apps-script/.clasp.json` (both are gitignored).
+- **Sales Log columns:** `Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount | Sale ID | Status | Updated At`. Status is `OK`, `EDITED` or `VOID`. Logs created before these columns existed are upgraded automatically on the next request.
 - Sales are serialised with `LockService` and validated server-side, so concurrent cashiers can't oversell.

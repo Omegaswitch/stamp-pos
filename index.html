@@ -137,6 +137,37 @@
   .pay-btn:hover { border-color: var(--border-strong); }
   .pay-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
+  /* Recent sales */
+  .sales-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+  .sales-hint { font-size: 13px; color: var(--muted); }
+  .sales-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 30px; }
+  .sales-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .sales-table th { text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 12px 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .sales-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; font-variant-numeric: tabular-nums; }
+  .sales-table tr:last-child td { border-bottom: 0; }
+  .sales-table th.num, .sales-table td.num { text-align: right; }
+  .sales-table td.actions { text-align: right; white-space: nowrap; }
+  .sales-table tr.void td { color: var(--muted); }
+  .sales-table tr.void td.num { text-decoration: line-through; }
+  .sales-table tr.editing td { background: var(--accent-soft); }
+  .sales-table .empty { text-align: center; color: var(--muted); padding: 26px; }
+  .sales-table .time { white-space: nowrap; }
+  .sales-table .sid { display: block; font-size: 11px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .pill.ok { background: var(--success-soft); color: var(--success); }
+  .pill.edited { background: var(--warn-soft); color: var(--warn); }
+  .pill.void { background: var(--danger-soft); color: var(--danger); }
+  .btn-sm { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 13px; font-weight: 500; margin-left: 6px; }
+  .btn-sm:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .btn-sm.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+  .btn-sm.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .btn-sm.primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--accent-text); }
+  .btn-sm:disabled { opacity: .5; }
+  .edit-qty { width: 64px; height: 34px; text-align: center; font-size: 15px; font-weight: 600; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); -moz-appearance: textfield; }
+  .edit-qty::-webkit-outer-spin-button, .edit-qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .edit-qty:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .edit-pay { height: 34px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); padding: 0 8px; font-size: 13px; }
+
   /* Checkout bar */
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow-bar); z-index: 10; }
   .bar-inner { max-width: 1240px; margin: 0 auto; padding: 18px 32px; display: flex; align-items: center; gap: 36px; }
@@ -220,6 +251,28 @@
       Bank Transfer / QR
     </button>
   </div>
+
+  <div class="sales-head">
+    <h2 class="section-title">Recent sales</h2>
+    <span class="sales-hint">Sold something by mistake? <strong>Edit</strong> changes the quantities (stock adjusts by the difference) · <strong>Void</strong> cancels the sale and re-adds the stock</span>
+  </div>
+  <div class="sales-wrap">
+    <table class="sales-table" id="salesTable">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th class="num" id="salesH0">Stamp 1</th>
+          <th class="num" id="salesH1">Stamp 2</th>
+          <th class="num" id="salesH2">Stamp 3</th>
+          <th>Payment</th>
+          <th class="num">Total</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="salesBody"><tr><td class="empty" colspan="8">Loading…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 
 <div class="bar">
@@ -262,8 +315,12 @@
     { name: 'Stamp C', price: 7.5, stock: 3 }
   ];
 
+  const PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
+
   const state = {
     items: [],                 // { name, price, stock, qty }
+    sales: [],                 // recent sales from the sheet: { id, timestamp, quantities, paymentMethod, total, status }
+    editing: null,             // { id, quantities, paymentMethod } while a sale row is being edited
     payment: 'Cash',
     busy: false,
     demo: !CONFIG.SCRIPT_URL,
@@ -275,7 +332,8 @@
     grid: $('grid'), status: $('status'), statusText: $('statusText'), banner: $('banner'),
     refreshBtn: $('refreshBtn'), payment: $('payment'), barCount: $('barCount'), barTotal: $('barTotal'),
     barPay: $('barPay'), sellBtn: $('sellBtn'), sellLabel: $('sellLabel'), toast: $('toast'),
-    sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn')
+    sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn'),
+    salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')]
   };
   let cardRefs = [];
 
@@ -404,6 +462,175 @@
   function renderAll() {
     state.items.forEach((_, i) => renderCard(i));
     renderBar();
+    renderSales();
+  }
+
+  // ───────────────────────── Recent sales (edit / void) ─────────────────────────
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return iso || '';
+    return d.toLocaleString(CONFIG.LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function renderSales() {
+    state.items.forEach((it, i) => { if (els.salesHeads[i]) els.salesHeads[i].textContent = it.name; });
+    const body = els.salesBody;
+    body.innerHTML = '';
+    if (!state.sales.length) {
+      const tr = el('tr'); const td = el('td', 'empty', 'No sales yet'); td.colSpan = 8; tr.appendChild(td); body.appendChild(tr);
+      return;
+    }
+    state.sales.forEach(sale => {
+      const isVoid = sale.status === 'VOID';
+      const editing = state.editing && state.editing.id === sale.id;
+      const tr = el('tr', isVoid ? 'void' : editing ? 'editing' : '');
+
+      const tdTime = el('td', 'time', fmtTime(sale.timestamp));
+      tdTime.appendChild(el('span', 'sid', sale.id));
+      tr.appendChild(tdTime);
+
+      for (let i = 0; i < 3; i++) {
+        const td = el('td', 'num');
+        if (editing) {
+          const inp = el('input', 'edit-qty');
+          inp.type = 'number'; inp.min = 0; inp.step = 1;
+          // May go up to what is on the shelf plus what this sale already took.
+          inp.max = (state.items[i] ? state.items[i].stock : 0) + sale.quantities[i];
+          inp.value = state.editing.quantities[i];
+          inp.disabled = state.busy;
+          inp.addEventListener('input', () => {
+            let q = Math.floor(Number(inp.value)); if (!Number.isFinite(q) || q < 0) q = 0;
+            const max = Number(inp.max);
+            if (q > max) { q = max; inp.value = q; toast('error', 'Only ' + max + ' available', 'Quantity capped at current stock plus what this sale took.', 2200); }
+            state.editing.quantities[i] = q;
+          });
+          td.appendChild(inp);
+        } else {
+          td.textContent = sale.quantities[i] || '·';
+          if (!sale.quantities[i]) td.style.color = 'var(--muted)';
+        }
+        tr.appendChild(td);
+      }
+
+      const tdPay = el('td');
+      if (editing) {
+        const sel = el('select', 'edit-pay');
+        PAYMENTS.forEach(p => { const o = el('option', '', p); o.value = p; o.selected = p === state.editing.paymentMethod; sel.appendChild(o); });
+        sel.disabled = state.busy;
+        sel.addEventListener('change', () => { state.editing.paymentMethod = sel.value; });
+        tdPay.appendChild(sel);
+      } else tdPay.textContent = sale.paymentMethod;
+      tr.appendChild(tdPay);
+
+      tr.appendChild(el('td', 'num', money(sale.total)));
+
+      const tdStatus = el('td');
+      tdStatus.appendChild(el('span', 'pill ' + sale.status.toLowerCase(), sale.status === 'OK' ? 'Sold' : sale.status === 'EDITED' ? 'Edited' : 'Voided'));
+      tr.appendChild(tdStatus);
+
+      const tdAct = el('td', 'actions');
+      if (editing) {
+        const save = el('button', 'btn-sm primary', 'Save'); save.type = 'button'; save.disabled = state.busy;
+        save.addEventListener('click', () => saveEdit(sale));
+        const cancel = el('button', 'btn-sm', 'Cancel'); cancel.type = 'button'; cancel.disabled = state.busy;
+        cancel.addEventListener('click', () => { state.editing = null; renderSales(); });
+        tdAct.appendChild(save); tdAct.appendChild(cancel);
+      } else if (!isVoid) {
+        const edit = el('button', 'btn-sm', 'Edit'); edit.type = 'button'; edit.disabled = state.busy || !!state.editing;
+        edit.addEventListener('click', () => { state.editing = { id: sale.id, quantities: sale.quantities.slice(), paymentMethod: sale.paymentMethod }; renderSales(); });
+        const vd = el('button', 'btn-sm danger', 'Void'); vd.type = 'button'; vd.disabled = state.busy || !!state.editing;
+        vd.addEventListener('click', () => voidSale(sale));
+        tdAct.appendChild(edit); tdAct.appendChild(vd);
+      }
+      tr.appendChild(tdAct);
+      body.appendChild(tr);
+    });
+  }
+
+  function applyServer(data) {
+    if (Array.isArray(data.items) && data.items.length === 3) {
+      data.items.forEach((srv, i) => {
+        state.items[i].stock = Math.max(0, Math.floor(Number(srv.stock) || 0));
+        if (srv.price != null) state.items[i].price = Number(srv.price) || state.items[i].price;
+        if (state.items[i].qty > state.items[i].stock) state.items[i].qty = state.items[i].stock;
+      });
+    }
+    if (Array.isArray(data.sales)) state.sales = data.sales;
+  }
+
+  // Runs a void/edit against the sheet (or the demo store) with the UI locked meanwhile.
+  async function runAction(payload, successTitle, successDetail) {
+    if (state.busy) return false;
+    state.busy = true;
+    renderAll();
+    try {
+      const data = state.demo ? await demoAction(payload) : await apiPost(Object.assign({ pin: getPin() }, payload));
+      if (!data || data.ok !== true) throw new Error((data && data.error) || 'Server rejected the request');
+      applyServer(data);
+      state.editing = null;
+      toast('success', successTitle, successDetail + (state.demo ? ' (demo, not saved)' : ''));
+      return true;
+    } catch (err) {
+      const msg = err.message || String(err);
+      toast('error', 'Not saved', msg, 6000);
+      if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
+      return false;
+    } finally {
+      state.busy = false;
+      renderAll();
+    }
+  }
+
+  function voidSale(sale) {
+    const summary = sale.quantities.map((q, i) => q ? q + '× ' + state.items[i].name : '').filter(Boolean).join(', ');
+    if (!window.confirm('Void this sale?\n\n' + summary + ' · ' + money(sale.total) + ' · ' + sale.paymentMethod + '\n\nThe stock will be added back to the shelf.')) return;
+    runAction({ action: 'void', saleId: sale.id }, 'Sale voided · ' + money(sale.total), summary + ' returned to stock');
+  }
+
+  function saveEdit(sale) {
+    const e = state.editing;
+    if (!e) return;
+    const total = e.quantities.reduce((s, q) => s + q, 0);
+    if (total === 0) { toast('error', 'Quantities are all zero', 'Use Void to cancel the whole sale.', 4000); return; }
+    const same = e.quantities.every((q, i) => q === sale.quantities[i]) && e.paymentMethod === sale.paymentMethod;
+    if (same) { state.editing = null; renderSales(); return; }
+    runAction({ action: 'edit', saleId: sale.id, quantities: e.quantities, paymentMethod: e.paymentMethod },
+      'Sale updated', 'Stock adjusted by the difference');
+  }
+
+  // Demo-mode stand-in for the sheet, so edit/void can be tried before deploying.
+  const demoSales = [];
+  function demoSnapshot(sale) {
+    return { ok: true, items: state.items.map(it => ({ name: it.name, price: it.price, stock: it.stock })), sales: demoSales.slice(0, 15), sale };
+  }
+  async function demoAction(p) {
+    await new Promise(r => setTimeout(r, 500));
+    const sale = demoSales.find(s => s.id === p.saleId);
+    if (!sale) return { ok: false, error: 'Sale not found' };
+    if (p.action === 'void') {
+      if (sale.status === 'VOID') return { ok: false, error: 'This sale is already voided' };
+      sale.quantities.forEach((q, i) => { state.items[i].stock += q; });
+      sale.status = 'VOID';
+    } else if (p.action === 'edit') {
+      if (sale.status === 'VOID') return { ok: false, error: 'A voided sale cannot be edited — record a new sale instead' };
+      for (let i = 0; i < 3; i++) {
+        const delta = p.quantities[i] - sale.quantities[i];
+        if (delta > state.items[i].stock) return { ok: false, error: 'Not enough stock for ' + state.items[i].name };
+      }
+      p.quantities.forEach((q, i) => { state.items[i].stock -= q - sale.quantities[i]; });
+      sale.quantities = p.quantities.slice();
+      sale.paymentMethod = p.paymentMethod || sale.paymentMethod;
+      sale.total = sale.quantities.reduce((s, q, i) => s + q * state.items[i].price, 0);
+      sale.status = 'EDITED';
+    }
+    return demoSnapshot(sale);
   }
 
   // ───────────────────────── Quantity logic ─────────────────────────
@@ -469,6 +696,8 @@
       const items = normalizeItems(data.items);
       if (items.length !== 3) throw new Error('Expected 3 items in the Inventory tab, got ' + items.length);
       state.items = items;
+      state.sales = Array.isArray(data.sales) ? data.sales : [];
+      state.editing = null;
       hideBanner();
       setStatus('ok', 'Connected · updated ' + new Date().toLocaleTimeString());
       buildCards();
@@ -488,6 +717,7 @@
     const quantities = state.items.map(it => it.qty);
     const snapshot = state.items.map(it => ({ stock: it.stock, qty: it.qty }));
     const payload = {
+      action: 'sale',
       quantities,
       paymentMethod: state.payment,
       total: Number(t.total.toFixed(2)),
@@ -504,19 +734,17 @@
       let data;
       if (state.demo) {
         await new Promise(r => setTimeout(r, 650));
-        data = { ok: true, items: state.items.map(it => ({ name: it.name, price: it.price, stock: it.stock })), sale: { total: payload.total } };
+        const sale = { id: 'S-DEMO' + String(demoSales.length + 1).padStart(3, '0'), timestamp: new Date().toISOString(),
+          quantities: quantities.slice(), paymentMethod: state.payment, total: payload.total, status: 'OK' };
+        demoSales.unshift(sale);
+        data = demoSnapshot(sale);
       } else {
         data = await apiPost(payload);
       }
       if (!data || data.ok !== true) throw new Error((data && data.error) || 'Server rejected the sale');
 
-      // Sync with the authoritative stock from the sheet (handles concurrent cashiers).
-      if (Array.isArray(data.items) && data.items.length === 3) {
-        data.items.forEach((srv, i) => {
-          state.items[i].stock = Math.max(0, Math.floor(Number(srv.stock) || 0));
-          if (srv.price != null) state.items[i].price = Number(srv.price) || state.items[i].price;
-        });
-      }
+      // Sync with the authoritative stock + sales list from the sheet (handles concurrent cashiers).
+      applyServer(data);
       const saleTotal = (data.sale && Number(data.sale.total)) || t.total;
       state.session.sales += 1;
       state.session.revenue += saleTotal;
