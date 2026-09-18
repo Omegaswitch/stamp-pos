@@ -35,6 +35,7 @@ function doPost(e) {
     lock.waitLock(15000);
 
     var body = parseBody_(e);
+    checkPin_(body.pin);
     var quantities = normaliseQuantities_(body.quantities);
     var paymentMethod = String(body.paymentMethod || '').trim();
 
@@ -121,6 +122,19 @@ function normaliseQuantities_(list) {
     out.push(n);
   }
   return out;
+}
+
+/**
+ * Optional cashier PIN. Set it in the editor: Project Settings → Script Properties →
+ * add property POS_PIN. When it is set, every sale must carry the matching `pin`.
+ * (The page is public on GitHub Pages, so this stops strangers from posting sales.)
+ */
+function checkPin_(pin) {
+  var expected = PropertiesService.getScriptProperties().getProperty('POS_PIN');
+  if (!expected) return;                                   // no PIN configured
+  if (String(pin || '').trim() !== String(expected).trim()) {
+    throw new Error(pin ? 'Invalid PIN' : 'PIN required');
+  }
 }
 
 function getSheetOrThrow_(ss, name) {

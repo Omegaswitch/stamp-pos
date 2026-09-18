@@ -1,3 +1,6 @@
 .claude/
 .DS_Store
 Thumbs.db
+apps-script/.clasp.json
+node_modules/
+dist/

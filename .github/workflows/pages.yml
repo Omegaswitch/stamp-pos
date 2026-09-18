@@ -1,0 +1,58 @@
+name: Deploy site to GitHub Pages
+
+# Publishes index.html to GitHub Pages. If the repository variable
+# APPS_SCRIPT_DEPLOYMENT_ID is set, the Apps Script Web App URL is injected
+# into CONFIG.SCRIPT_URL at build time so the repo never needs to hardcode it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "index.html"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        env:
+          DEPLOYMENT_ID: ${{ vars.APPS_SCRIPT_DEPLOYMENT_ID }}
+        run: |
+          mkdir -p dist
+          cp index.html dist/index.html
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            URL="https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec"
+            sed -i "s|SCRIPT_URL: '', *// @inject SCRIPT_URL|SCRIPT_URL: '${URL}', // injected by CI|" dist/index.html
+            if ! grep -q "$URL" dist/index.html; then
+              echo "::error::Failed to inject SCRIPT_URL into index.html (marker comment missing?)"
+              exit 1
+            fi
+            echo "Injected $URL"
+          else
+            echo "::warning::APPS_SCRIPT_DEPLOYMENT_ID is not set — the published page will run in demo mode."
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

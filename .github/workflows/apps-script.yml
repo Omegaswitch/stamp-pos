@@ -1,0 +1,90 @@
+name: Deploy Apps Script
+
+# Pushes apps-script/ to the Google Apps Script project bound to your sheet and
+# updates the Web App deployment so the /exec URL keeps working.
+#
+# Required repository settings (Settings → Secrets and variables → Actions):
+#   secret   CLASPRC_JSON               contents of ~/.clasprc.json after `clasp login`
+#   variable APPS_SCRIPT_ID             Apps Script project ID (Project Settings → IDs)
+#   variable APPS_SCRIPT_DEPLOYMENT_ID  set after the first run (the run prints it)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps-script/**"
+      - ".github/workflows/apps-script.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: apps-script
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install clasp
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Restore clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::Secret CLASPRC_JSON is not set. Run 'clasp login' locally and store ~/.clasprc.json as that secret (see SETUP.md)."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: Push source to Apps Script
+        working-directory: apps-script
+        env:
+          SCRIPT_ID: ${{ vars.APPS_SCRIPT_ID }}
+        run: |
+          if [ -z "$SCRIPT_ID" ]; then
+            echo "::error::Repository variable APPS_SCRIPT_ID is not set (Apps Script editor → Project Settings → Script ID)."
+            exit 1
+          fi
+          printf '{"scriptId":"%s","rootDir":"."}\n' "$SCRIPT_ID" > .clasp.json
+          clasp push -f
+
+      - name: Update Web App deployment
+        working-directory: apps-script
+        env:
+          DEPLOYMENT_ID: ${{ vars.APPS_SCRIPT_DEPLOYMENT_ID }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            clasp deploy -i "$DEPLOYMENT_ID" -d "$SHORT_SHA"
+            URL="https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec"
+            echo "Updated Web App: $URL"
+            {
+              echo "### Apps Script updated"
+              echo "Web App URL: $URL"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            OUT="$(clasp deploy -d "initial $SHORT_SHA")"
+            echo "$OUT"
+            NEW_ID="$(echo "$OUT" | grep -oE 'AKfyc[A-Za-z0-9_-]+' | head -1)"
+            if [ -z "$NEW_ID" ]; then
+              echo "::error::Could not read the deployment ID from clasp output."
+              exit 1
+            fi
+            URL="https://script.google.com/macros/s/${NEW_ID}/exec"
+            echo "::notice title=First deployment created::Set repository variable APPS_SCRIPT_DEPLOYMENT_ID=${NEW_ID} then run the 'Deploy site to GitHub Pages' workflow."
+            {
+              echo "### First Web App deployment created"
+              echo ""
+              echo "1. Add repository variable **APPS_SCRIPT_DEPLOYMENT_ID** = \`${NEW_ID}\`"
+              echo "2. Re-run **Deploy site to GitHub Pages** so the page points at:"
+              echo ""
+              echo "   \`${URL}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

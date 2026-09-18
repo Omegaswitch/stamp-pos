@@ -1,19 +1,60 @@
 # Stamp POS — Setup
 
-Two files, ~10 minutes:
+```
+index.html                       cashier UI → published to GitHub Pages
+apps-script/Code.gs              backend   → pushed to Google Apps Script by CI
+apps-script/appsscript.json      Apps Script manifest (web app: execute as me, access anyone)
+.github/workflows/apps-script.yml  clasp push + update Web App deployment
+.github/workflows/pages.yml        build index.html (inject Web App URL) + deploy Pages
+```
 
-- `index.html` — the cashier UI (open it in any desktop browser, no server needed)
-- `Code.gs` — the Apps Script backend that reads/writes the Google Sheet
+Everything after the one-time Google authorisation is automatic: push to `main` → script and site redeploy.
 
-## 1. Create the spreadsheet
+## One-time setup (≈15 min)
 
-1. Go to [sheets.new](https://sheets.new) and name the spreadsheet (e.g. **Stamp POS**).
-2. Open **Extensions → Apps Script**.
-3. Delete the placeholder code, paste the full contents of `Code.gs`, and save (Ctrl/Cmd+S).
-4. In the function dropdown (toolbar), choose **`setupSheets`** and click **Run**.
-   - The first run asks for authorization → *Review permissions* → pick your account → *Advanced* → *Go to … (unsafe)* → *Allow*. This is normal for personal scripts.
-   - This creates both tabs with headers and sample rows.
-5. Back in the spreadsheet, edit the **Inventory** tab so rows 2–4 hold your real stamps:
+### 1. Create the spreadsheet + script project
+
+1. [sheets.new](https://sheets.new) → name it (e.g. **Stamp POS**).
+2. **Extensions → Apps Script**. You'll see an empty `Code.gs` — leave it, CI will overwrite it.
+3. **Project Settings (⚙) → IDs → Script ID** → copy it. You'll need it in step 3.
+4. While you're in Project Settings: **Script Properties → Add script property** → `POS_PIN` = a PIN of your choice (e.g. `4821`). This stops strangers who find the public page from posting sales. Optional but recommended.
+
+### 2. Let CI log in to Google as you (`clasp`)
+
+`clasp` is Google's CLI for Apps Script. You authorise it **once** on your machine and give the resulting token to GitHub Actions as a secret.
+
+1. Enable the Apps Script API for your account: <https://script.google.com/home/usersettings> → **Google Apps Script API → On**.
+2. Log in (needs Node.js; opens a browser window):
+
+   ```bash
+   npx @google/clasp@2.4.2 login
+   ```
+
+3. Store the token as a repository secret (it's written to `~/.clasprc.json`):
+
+   ```bash
+   gh secret set CLASPRC_JSON --repo Omegaswitch/stamp-pos < ~/.clasprc.json
+   ```
+
+   (On Windows PowerShell: `Get-Content "$HOME\.clasprc.json" -Raw | gh secret set CLASPRC_JSON --repo Omegaswitch/stamp-pos`)
+
+### 3. Tell CI which script to push to
+
+```bash
+gh variable set APPS_SCRIPT_ID --repo Omegaswitch/stamp-pos --body "PASTE_SCRIPT_ID_HERE"
+```
+
+### 4. First deployment
+
+1. **Actions → Deploy Apps Script → Run workflow**. It pushes the code and, because no deployment exists yet, **creates** the Web App and prints its deployment ID in the run summary.
+2. Save that ID:
+
+   ```bash
+   gh variable set APPS_SCRIPT_DEPLOYMENT_ID --repo Omegaswitch/stamp-pos --body "AKfyc..."
+   ```
+
+3. Authorise the script once: open the Apps Script editor → pick `setupSheets` in the toolbar dropdown → **Run** → *Review permissions* → your account → *Advanced → Go to … (unsafe)* → *Allow*. This also creates the **Inventory** and **Sales Log** tabs with sample rows.
+4. Edit **Inventory** rows 2–4 with your real stamps:
 
    | Item Name | Unit Price | Current Stock |
    |-----------|-----------:|--------------:|
@@ -21,61 +62,35 @@ Two files, ~10 minutes:
    | Stamp B   | 4.00       | 50            |
    | Stamp C   | 7.50       | 25            |
 
-   Keep the header in row 1 and exactly three item rows. The **Sales Log** tab (`Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount`) fills itself.
+5. **Actions → Deploy site to GitHub Pages → Run workflow**. The build injects `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec` into `index.html` and publishes it at **https://omegaswitch.github.io/stamp-pos/**.
 
-   > Prefer to build the tabs by hand? Name them exactly `Inventory` and `Sales Log`, with the headers above in row 1.
+Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...]}`. Then open the Pages URL; the status pill should read **Connected**. Click **PIN** once and enter the PIN from step 1.4 (remembered in that browser).
 
-## 2. Deploy the Web App
+## Day-to-day
 
-1. In the Apps Script editor: **Deploy → New deployment**.
-2. Click the gear next to *Select type* → **Web app**.
-3. Settings:
-   - **Description:** anything (e.g. `v1`)
-   - **Execute as:** **Me**
-   - **Who has access:** **Anyone**  ← required, otherwise browsers get a login redirect instead of JSON
-4. **Deploy**, then copy the **Web app URL** (ends in `/exec`).
+- Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
+- Edit `index.html` → push → Pages redeploys.
+- Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
+- Currency/locale: `CONFIG.CURRENCY` / `CONFIG.LOCALE` in `index.html`. Timezone for the script: `apps-script/appsscript.json`.
 
-Optional check: open that URL in a browser tab — you should see `{"ok":true,"items":[...]}`.
+## Running locally without CI
 
-## 3. Connect the frontend
-
-1. Open `index.html` in a text editor and paste the URL into the config block near the top of the `<script>`:
-
-   ```js
-   const CONFIG = {
-     SCRIPT_URL: 'https://script.google.com/macros/s/AKfycb.../exec',
-     CURRENCY: 'USD',    // e.g. 'EUR', 'CZK', 'GBP'
-     LOCALE: 'en-US',    // e.g. 'cs-CZ', 'de-DE'
-     LOW_STOCK_AT: 5
-   };
-   ```
-
-2. Save and open `index.html` in Chrome/Edge/Firefox (double-click works; no hosting required). The status pill turns green ("Connected") and the cards show the live stock from the sheet.
-
-Until `SCRIPT_URL` is set the page runs in **Demo mode** with sample items so you can try the UI; demo sales are not saved.
-
-## Daily use
-
-- Set quantities with **+ / −** or type a number (capped at available stock), pick **Cash / Card / Bank Transfer / QR**, click **Mark as Sold** (or press **Ctrl+Enter**).
-- Stock is deducted on screen immediately and written to the sheet; a row is appended to **Sales Log**. If the request fails, the on-screen stock is restored and an error toast appears.
-- **Refresh stock** re-reads the sheet (useful after restocking or when several cashiers share one sheet).
-- To restock or change prices, edit the **Inventory** tab and click **Refresh stock**.
-
-## Updating the script later
-
-After editing `Code.gs`, changes are **not** live until you publish a new version: **Deploy → Manage deployments → ✎ (edit) → Version: New version → Deploy**. The URL stays the same.
+Open `index.html` directly and set `CONFIG.SCRIPT_URL` by hand (keep the `// @inject SCRIPT_URL` comment on that line or the CI injection stops working). With the URL empty the page runs in demo mode.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| "Could not load inventory" / CORS error in console | Deployment must be **Execute as: Me** + **Who has access: Anyone**. Redeploy a new version if you changed it. |
-| GET works, POST fails | Keep the frontend's `Content-Type: text/plain` (already set). Apps Script cannot answer CORS preflight requests, so `application/json` will be blocked. |
-| `Missing sheet tab "Inventory"` | Tab names must match exactly (`Inventory`, `Sales Log`). Run `setupSheets()` or rename. |
-| Sale rejected: "Not enough stock" | Another cashier sold it first — click **Refresh stock**. The server always validates against the live sheet. |
-| Wrong currency symbol | Change `CURRENCY` / `LOCALE` in `index.html`. Prices themselves come from the sheet. |
+| Workflow: `CLASPRC_JSON is not set` / `invalid_grant` | Re-run `npx @google/clasp@2.4.2 login` and re-set the secret. Tokens can expire if unused for months. |
+| Workflow: `User has not enabled the Apps Script API` | Step 2.1. |
+| Page says "Could not load inventory" | `APPS_SCRIPT_DEPLOYMENT_ID` missing (page is in demo mode), or the script hasn't been authorised yet (step 4.3). Open the `/exec` URL to see the actual error. |
+| "PIN required" / "Invalid PIN" toast | Click **PIN** in the header and enter the value of `POS_PIN`. Remove the script property to disable PINs. |
+| GET works, POST fails with CORS | Keep the frontend's `Content-Type: text/plain`. Apps Script can't answer preflight requests, so `application/json` gets blocked. |
+| `Missing sheet tab "Inventory"` | Run `setupSheets()` once (step 4.3). |
+| "Not enough stock" on sale | Someone else sold it first — **Refresh stock**. The server validates against the live sheet. |
 
-## Notes
+## Security notes
 
-- Concurrency: `doPost` uses `LockService` and validates stock server-side, so two browsers can't oversell the same stamp.
-- Security: an "Anyone" deployment means anyone with the `/exec` URL can post sales. Don't share the URL publicly; if it leaks, delete the deployment and create a new one.
+- The repo and the Pages site are public; the Apps Script `/exec` URL is visible in the page source. That's unavoidable for a static page — the `POS_PIN` is what gates writes. Reads (stock + prices) are open to anyone with the URL.
+- `CLASPRC_JSON` is a Google OAuth token for your account, scoped to Apps Script. Keep it as a GitHub secret only; never commit `.clasprc.json` or `apps-script/.clasp.json` (both are gitignored).
+- Sales are serialised with `LockService` and validated server-side, so concurrent cashiers can't oversell.

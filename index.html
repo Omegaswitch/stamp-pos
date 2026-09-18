@@ -196,6 +196,7 @@
       </div>
       <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
       <button class="btn-ghost" id="refreshBtn" type="button">Refresh stock</button>
+      <button class="btn-ghost" id="pinBtn" type="button" title="Cashier PIN (only needed if one is set in the Apps Script)">PIN</button>
     </div>
   </header>
 
@@ -241,9 +242,10 @@
   'use strict';
 
   // ───────────────────────── CONFIG ─────────────────────────
-  // Paste your deployed Apps Script Web App URL here (ends with /exec).
+  // Apps Script Web App URL (ends with /exec). Leave empty when deploying via
+  // GitHub Actions — the Pages workflow injects it from APPS_SCRIPT_DEPLOYMENT_ID.
   const CONFIG = {
-    SCRIPT_URL: '',
+    SCRIPT_URL: '', // @inject SCRIPT_URL
     CURRENCY: 'USD',      // ISO 4217 code, e.g. 'EUR', 'CZK', 'GBP'
     LOCALE: 'en-US',      // number/currency formatting locale
     LOW_STOCK_AT: 5       // show a "Low stock" badge at or below this level
@@ -273,9 +275,22 @@
     grid: $('grid'), status: $('status'), statusText: $('statusText'), banner: $('banner'),
     refreshBtn: $('refreshBtn'), payment: $('payment'), barCount: $('barCount'), barTotal: $('barTotal'),
     barPay: $('barPay'), sellBtn: $('sellBtn'), sellLabel: $('sellLabel'), toast: $('toast'),
-    sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue')
+    sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn')
   };
   let cardRefs = [];
+
+  // Optional cashier PIN. Set POS_PIN in the Apps Script's Script Properties to require it;
+  // the value is remembered in this browser only (localStorage), never committed anywhere.
+  const PIN_KEY = 'stampPos.pin';
+  function getPin() { try { return localStorage.getItem(PIN_KEY) || ''; } catch (e) { return ''; } }
+  function askPin(message) {
+    const v = window.prompt(message || 'Enter the cashier PIN:', '');
+    if (v === null) return false;
+    try { localStorage.setItem(PIN_KEY, v.trim()); } catch (e) {}
+    renderPinBtn();
+    return true;
+  }
+  function renderPinBtn() { els.pinBtn.textContent = getPin() ? 'PIN ✓' : 'PIN'; }
 
   // ───────────────────────── UI helpers ─────────────────────────
   function setStatus(kind, text) {
@@ -476,7 +491,8 @@
       quantities,
       paymentMethod: state.payment,
       total: Number(t.total.toFixed(2)),
-      clientTime: new Date().toISOString()
+      clientTime: new Date().toISOString(),
+      pin: getPin()
     };
 
     // Optimistic: deduct immediately, reset selectors, lock the UI while the request is in flight.
@@ -509,7 +525,9 @@
     } catch (err) {
       // Roll back the optimistic deduction so the cashier can retry.
       state.items.forEach((it, i) => { it.stock = snapshot[i].stock; it.qty = snapshot[i].qty; });
-      toast('error', 'Sale not saved', (err.message || String(err)) + ' — stock restored, please try again.', 6000);
+      const msg = err.message || String(err);
+      toast('error', 'Sale not saved', msg + ' — stock restored, please try again.', 6000);
+      if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
     } finally {
       state.busy = false;
       renderAll();
@@ -518,6 +536,8 @@
 
   els.sellBtn.addEventListener('click', markAsSold);
   els.refreshBtn.addEventListener('click', loadInventory);
+  els.pinBtn.addEventListener('click', () => askPin());
+  renderPinBtn();
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); markAsSold(); }
   });
