@@ -25,6 +25,14 @@ var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', '
 var SALES_COLS = SALES_HEADERS.length;
 var RECENT_SALES = 15;
 
+// Order of Malta commemorative stamps, GP of Bohemia — sale receipt N. 178 (27/07/2026).
+// Prices in CZK (1 EUR = 24.25 CZK, rounded): 8.85 → 215, 7.65 → 193, 9.00 → 218. Stock: 250 each.
+var INVOICE_ITEMS = [
+  ['Stamp Set (4 stamps)', 215, 250],
+  ['First Day Cover',      193, 250],
+  ['Christmas Folder Set', 218, 250]
+];
+
 // ───────────────────────── HTTP handlers ─────────────────────────
 
 function doGet(e) {
@@ -293,12 +301,8 @@ function setupSheets() {
   if (!inv) {
     inv = ss.insertSheet(INVENTORY_SHEET);
     inv.getRange('A1:C1').setValues([['Item Name', 'Unit Price', 'Current Stock']]).setFontWeight('bold');
-    inv.getRange('A2:C4').setValues([
-      ['Stamp A', 2.50, 100],
-      ['Stamp B', 4.00, 50],
-      ['Stamp C', 7.50, 25]
-    ]);
-    inv.getRange('B2:B4').setNumberFormat('#,##0.00');
+    inv.getRange('A2:C4').setValues(INVOICE_ITEMS);
+    inv.getRange('B2:B4').setNumberFormat('#,##0');
     inv.getRange('C2:C4').setNumberFormat('0');
     inv.setFrozenRows(1);
     inv.autoResizeColumns(1, 3);
@@ -321,6 +325,19 @@ function setupSheets() {
   if (def && ss.getSheets().length > 2 && def.getLastRow() === 0) ss.deleteSheet(def);
 
   Logger.log('Setup complete: "%s" and "%s" are ready.', INVENTORY_SHEET, SALES_SHEET);
+}
+
+/**
+ * Overwrites Inventory rows 2–4 with the items, CZK prices and stock from the invoice
+ * (INVOICE_ITEMS above). Run once from the editor after setupSheets(); re-run to reset stock to 250.
+ */
+function resetInventoryFromInvoice() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var inv = getSheetOrThrow_(ss, INVENTORY_SHEET);
+  inv.getRange(2, 1, ITEM_COUNT, 3).setValues(INVOICE_ITEMS);
+  inv.getRange('B2:B4').setNumberFormat('#,##0');
+  inv.autoResizeColumns(1, 3);
+  Logger.log('Inventory set: ' + JSON.stringify(readInventoryRows_(inv)));
 }
 
 /** Quick manual test from the editor: logs the current inventory + recent sales JSON. */

@@ -54,13 +54,15 @@ gh variable set APPS_SCRIPT_ID --repo Omegaswitch/stamp-pos --body "PASTE_SCRIPT
    ```
 
 3. Authorise the script once: open the Apps Script editor → pick `setupSheets` in the toolbar dropdown → **Run** → *Review permissions* → your account → *Advanced → Go to … (unsafe)* → *Allow*. This also creates the **Inventory** and **Sales Log** tabs with sample rows.
-4. Edit **Inventory** rows 2–4 with your real stamps:
+4. The **Inventory** tab is seeded from the invoice (sale receipt N. 178, 27/07/2026; 1 EUR = 24.25 CZK):
 
-   | Item Name | Unit Price | Current Stock |
-   |-----------|-----------:|--------------:|
-   | Stamp A   | 2.50       | 100           |
-   | Stamp B   | 4.00       | 50            |
-   | Stamp C   | 7.50       | 25            |
+   | Item Name            | Unit Price (CZK) | Current Stock |
+   |----------------------|-----------------:|--------------:|
+   | Stamp Set (4 stamps) | 215              | 250           |
+   | First Day Cover      | 193              | 250           |
+   | Christmas Folder Set | 218              | 250           |
+
+   If the tab already existed with other rows, run **`resetInventoryFromInvoice`** from the editor once, or edit the cells by hand.
 
 5. **Actions → Deploy site to GitHub Pages → Run workflow**. The build injects `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec` into `index.html` and publishes it at **https://omegaswitch.github.io/stamp-pos/**.
 
@@ -75,7 +77,7 @@ Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...
 - Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
 - Edit `index.html` → push → Pages redeploys.
 - Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
-- Currency/locale: `CONFIG.CURRENCY` / `CONFIG.LOCALE` in `index.html`. Timezone for the script: `apps-script/appsscript.json`.
+- Currency/locale: `CONFIG.CURRENCY` / `CONFIG.LOCALE` in `index.html` (set to CZK / cs-CZ). Timezone for the script: `apps-script/appsscript.json`.
 
 ## Running locally without CI
 

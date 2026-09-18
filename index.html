@@ -299,20 +299,20 @@
   // GitHub Actions — the Pages workflow injects it from APPS_SCRIPT_DEPLOYMENT_ID.
   const CONFIG = {
     SCRIPT_URL: '', // @inject SCRIPT_URL
-    CURRENCY: 'USD',      // ISO 4217 code, e.g. 'EUR', 'CZK', 'GBP'
-    LOCALE: 'en-US',      // number/currency formatting locale
+    CURRENCY: 'CZK',      // ISO 4217 code, e.g. 'EUR', 'CZK', 'GBP'
+    LOCALE: 'cs-CZ',      // number/currency formatting locale
     LOW_STOCK_AT: 5       // show a "Low stock" badge at or below this level
   };
   // ──────────────────────────────────────────────────────────
 
-  const fmt = new Intl.NumberFormat(CONFIG.LOCALE, { style: 'currency', currency: CONFIG.CURRENCY });
+  const fmt = new Intl.NumberFormat(CONFIG.LOCALE, { style: 'currency', currency: CONFIG.CURRENCY, minimumFractionDigits: 0, maximumFractionDigits: 2 });
   const money = n => fmt.format(Number(n) || 0);
 
   // Used only when SCRIPT_URL is empty so the UI can be previewed before deployment.
   const DEMO_ITEMS = [
-    { name: 'Stamp A', price: 2.5, stock: 40 },
-    { name: 'Stamp B', price: 4.0, stock: 12 },
-    { name: 'Stamp C', price: 7.5, stock: 3 }
+    { name: 'Stamp Set (4 stamps)', price: 215, stock: 250 },
+    { name: 'First Day Cover', price: 193, stock: 250 },
+    { name: 'Christmas Folder Set', price: 218, stock: 250 }
   ];
 
   const PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
