@@ -75,11 +75,12 @@ Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...
   - **Void** → confirm → the full quantities go back on the shelf and the row is marked `VOID`.
   - **Delete** (only on voided rows) → confirm → the row is removed from the list *and* from the Sales Log sheet. Stock is untouched (it was restored by the void).
   - All three need the cashier PIN if one is set.
+- **Cash sales:** with **Cash** selected, a *Cash received* panel appears under the payment buttons. Type the amount (or tap a quick-amount chip: exact, next 100/200/500/1000/2000) and the **Change due** shows instantly; after *Mark as Sold* the amount to give back stays in the bar until the next sale starts. Cash received and change are saved in Sales Log columns `Cash Received` / `Change`.
 - **Buyer name:** optional field in the checkout bar, saved in the `Buyer` column and shown in Recent sales; editable via **Edit**.
 - Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
 - Edit `index.html` → push → Pages redeploys.
 - Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
-- Font: EB Garamond is loaded from Google Fonts; without internet the page falls back to Garamond/Georgia. The logo is embedded in `index.html`.
+- Font: Helvetica Neue → Helvetica → Arial system stack (no web font download). The logo is embedded in `index.html`.
 - Currency/locale: `CONFIG.CURRENCY` / `CONFIG.LOCALE` in `index.html` (set to CZK / cs-CZ). Timezone for the script: `apps-script/appsscript.json`.
 
 ## Running locally without CI
@@ -103,5 +104,5 @@ Open `index.html` directly and set `CONFIG.SCRIPT_URL` by hand (keep the `// @in
 
 - The repo and the Pages site are public; the Apps Script `/exec` URL is visible in the page source. That's unavoidable for a static page — the `POS_PIN` is what gates writes. Reads (stock + prices) are open to anyone with the URL.
 - `CLASPRC_JSON` is a Google OAuth token for your account, scoped to Apps Script. Keep it as a GitHub secret only; never commit `.clasprc.json` or `apps-script/.clasp.json` (both are gitignored).
-- **Sales Log columns:** `Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount | Sale ID | Status | Updated At | Buyer`. Status is `OK`, `EDITED` or `VOID`. Logs created before these columns existed are upgraded automatically on the next request.
+- **Sales Log columns:** `Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount | Sale ID | Status | Updated At | Buyer | Cash Received | Change`. Status is `OK`, `EDITED` or `VOID`. Logs created before these columns existed are upgraded automatically on the next request.
 - Sales are serialised with `LockService` and validated server-side, so concurrent cashiers can't oversell.

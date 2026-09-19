@@ -5,11 +5,12 @@
  *   "Inventory": A=Item Name | B=Unit Price | C=Current Stock   (rows 2–4 = the 3 stamps)
  *   "Sales Log": A=Timestamp | B=Qty Stamp 1 | C=Qty Stamp 2 | D=Qty Stamp 3 | E=Payment Method
  *                | F=Total Amount | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At | J=Buyer
+ *                | K=Cash Received | L=Change   (only for cash sales where the cashier entered the amount)
  *
  * Endpoints (deployed as a Web App, "Execute as: Me", "Who has access: Anyone"):
  *   GET  → { ok, items: [{ name, price, stock }, ×3], sales: [recent sales, newest first] }
  *   POST body (text/plain JSON), all require `pin` when POS_PIN is configured:
- *     { action: "sale", quantities: [q1,q2,q3], paymentMethod, buyer? }     → records a sale, deducts stock
+ *     { action: "sale", quantities: [q1,q2,q3], paymentMethod, buyer?, cashReceived? } → records a sale, deducts stock
  *     { action: "void", saleId }                                             → cancels a sale, re-adds its stock
  *     { action: "edit", saleId, quantities: [..], paymentMethod?, buyer? }   → changes a sale, adjusts stock by the difference
  *     { action: "delete", saleId }                                           → removes a VOIDED sale's row from the log
@@ -22,7 +23,7 @@ var INVENTORY_SHEET = 'Inventory';
 var SALES_SHEET = 'Sales Log';
 var ITEM_COUNT = 3;
 var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
-var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At', 'Buyer'];
+var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At', 'Buyer', 'Cash Received', 'Change'];
 var SALES_COLS = SALES_HEADERS.length;
 var RECENT_SALES = 15;
 
@@ -96,11 +97,16 @@ function recordSale_(inv, log, body) {
 
   writeStock_(inv, items.map(function (it, i) { return it.stock - quantities[i]; }));
 
+  var cashReceived = paymentMethod === 'Cash' ? toMoney_(body.cashReceived) : null;
+  var change = cashReceived != null ? Math.round((cashReceived - total) * 100) / 100 : null;
+
   var timestamp = new Date();
   var id = newSaleId_();
-  log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total, id, 'OK', '', buyer]);
+  log.appendRow([timestamp, quantities[0], quantities[1], quantities[2], paymentMethod, total, id, 'OK', '', buyer,
+                 cashReceived == null ? '' : cashReceived, change == null ? '' : change]);
 
-  return { id: id, timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total, status: 'OK', buyer: buyer };
+  return { id: id, timestamp: timestamp.toISOString(), quantities: quantities, paymentMethod: paymentMethod, total: total, status: 'OK', buyer: buyer,
+           cashReceived: cashReceived, change: change };
 }
 
 function voidSale_(inv, log, body) {
@@ -192,7 +198,9 @@ function rowToSale_(r, rowNumber) {
     total: Number(r[5]) || 0,
     status: String(r[7] || 'OK'),
     updatedAt: toIso_(r[8]),
-    buyer: String(r[9] || '')
+    buyer: String(r[9] || ''),
+    cashReceived: r[10] === '' || r[10] == null ? null : Number(r[10]),
+    change: r[11] === '' || r[11] == null ? null : Number(r[11])
   };
 }
 
@@ -287,6 +295,7 @@ function normaliseQuantities_(list) {
 }
 
 function toInt_(v) { var n = Math.floor(Number(v)); return isFinite(n) && n > 0 ? n : 0; }
+function toMoney_(v) { if (v === '' || v == null) return null; var n = Number(v); return isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null; }
 function sum_(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
 function toIso_(v) {
   if (v instanceof Date && !isNaN(v)) return v.toISOString();
@@ -332,6 +341,7 @@ function setupSheets() {
     log.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
     log.getRange('F2:F').setNumberFormat('#,##0.00');
     log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    log.getRange('K2:L').setNumberFormat('#,##0.00');
     log.setFrozenRows(1);
     log.autoResizeColumns(1, SALES_COLS);
   }

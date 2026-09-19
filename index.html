@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stamp Sales</title>
 <meta name="description" content="Desktop point-of-sale tracker for stamps, backed by Google Sheets via Apps Script.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f3f4f6;
@@ -20,6 +17,7 @@
     --accent: #2563eb;
     --accent-hover: #1d4ed8;
     --accent-soft: #e8efff;
+    --accent-ink: #1d4ed8;
     --accent-text: #ffffff;
     --success: #15803d;
     --success-soft: #e7f6ec;
@@ -29,38 +27,46 @@
     --warn-soft: #fff4e0;
     --radius: 14px;
     --radius-sm: 9px;
-    --shadow: 0 1px 2px rgba(16,24,40,.05), 0 6px 20px rgba(16,24,40,.06);
-    --shadow-bar: 0 -6px 24px rgba(16,24,40,.10);
+    --shadow: 0 1px 2px rgba(16,24,40,.06);
+    --shadow-bar: 0 -4px 16px rgba(16,24,40,.10);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0f1318; --surface: #171c23; --surface-2: #1d232b; --border: #2a323c; --border-strong: #3a444f;
-      --text: #eef1f4; --muted: #97a3b0; --accent: #3b82f6; --accent-hover: #2f6fe0; --accent-soft: #1b2a45;
+      --text: #eef1f4; --muted: #97a3b0; --accent: #3b82f6; --accent-hover: #2f6fe0; --accent-soft: #1b2a45; --accent-ink: #9cc0ff;
       --success: #34c26b; --success-soft: #16301f; --danger: #f26363; --danger-soft: #3a1c1c;
       --warn: #f2a33a; --warn-soft: #3a2a12;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); --shadow-bar: 0 -6px 24px rgba(0,0,0,.5);
+      --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-bar: 0 -4px 16px rgba(0,0,0,.5);
     }
   }
   :root[data-theme="dark"] {
     --bg: #0f1318; --surface: #171c23; --surface-2: #1d232b; --border: #2a323c; --border-strong: #3a444f;
-    --text: #eef1f4; --muted: #97a3b0; --accent: #3b82f6; --accent-hover: #2f6fe0; --accent-soft: #1b2a45;
+    --text: #eef1f4; --muted: #97a3b0; --accent: #3b82f6; --accent-hover: #2f6fe0; --accent-soft: #1b2a45; --accent-ink: #9cc0ff;
     --success: #34c26b; --success-soft: #16301f; --danger: #f26363; --danger-soft: #3a1c1c;
     --warn: #f2a33a; --warn-soft: #3a2a12;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); --shadow-bar: 0 -6px 24px rgba(0,0,0,.5);
+    --shadow: 0 1px 2px rgba(0,0,0,.4); --shadow-bar: 0 -4px 16px rgba(0,0,0,.5);
   }
 
   * { box-sizing: border-box; }
   html, body { margin: 0; }
+  ::selection { background: var(--accent-soft); color: var(--text); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: "EB Garamond", Garamond, "Times New Roman", Georgia, serif;
-    font-size: 17px;
-    line-height: 1.4;
-    font-variant-numeric: lining-nums tabular-nums;
+    font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    caret-color: var(--accent);
+    accent-color: var(--accent);
     -webkit-font-smoothing: antialiased;
   }
-  button { font: inherit; color: inherit; cursor: pointer; }
+  button { font: inherit; color: inherit; cursor: pointer; appearance: none; -webkit-appearance: none; -webkit-tap-highlight-color: transparent; }
   button:disabled { cursor: not-allowed; }
   input { font: inherit; color: inherit; }
 
@@ -70,9 +76,10 @@
   .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
   .brand { display: flex; align-items: center; gap: 16px; }
   .brand img { width: 56px; height: auto; flex: none; }
-  .brand h1 { margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
-  .brand p { margin: 3px 0 0; color: var(--muted); font-style: italic; }
-  .header-right { display: flex; align-items: center; gap: 14px; }
+  .brand h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .brand p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  .header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .status, .session, .btn-ghost { white-space: nowrap; }
   .status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 13px; font-weight: 500; }
   .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .status.ok .dot { background: var(--success); }
@@ -87,12 +94,13 @@
 
   .banner { display: none; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px; font-size: 14px; }
   .banner.show { display: flex; }
+  .banner svg { width: 18px; height: 18px; flex: none; }
   .banner.warn { background: var(--warn-soft); color: var(--warn); }
   .banner.err { background: var(--danger-soft); color: var(--danger); }
   .banner code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
 
   /* Cards */
-  .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 12px; }
+  .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; }
   .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-bottom: 30px; }
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -102,7 +110,7 @@
   .card.has-qty { border-color: var(--accent); }
   .card.out { opacity: .72; }
   .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-  .card-name { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .card-name { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
   .card-price { font-size: 15px; color: var(--muted); margin-top: 2px; }
   .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px; white-space: nowrap; }
   .badge.out { background: var(--danger-soft); color: var(--danger); }
@@ -118,7 +126,7 @@
     height: 48px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface);
     font-size: 22px; font-weight: 500; line-height: 1; transition: background .12s, border-color .12s;
   }
-  .qty button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .qty button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
   .qty button:active:not(:disabled) { transform: translateY(1px); }
   .qty button:disabled { opacity: .4; }
   .qty input {
@@ -141,7 +149,40 @@
   }
   .pay-btn svg { width: 20px; height: 20px; }
   .pay-btn:hover { border-color: var(--border-strong); }
-  .pay-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .pay-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); }
+
+  /* Cash received / change due (shown while Cash is selected) */
+  .cash-panel {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px;
+    margin: -18px 0 30px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  }
+  .cash-panel[hidden] { display: none; }
+  .cash-field label { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; margin-bottom: 6px; }
+  .cash-input-wrap { position: relative; width: 200px; }
+  .cash-input-wrap input {
+    width: 100%; height: 48px; padding: 0 44px 0 14px; font-size: 22px; font-weight: 600; text-align: right;
+    border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); -moz-appearance: textfield;
+  }
+  .cash-input-wrap input::-webkit-outer-spin-button, .cash-input-wrap input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .cash-input-wrap input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  .cash-input-wrap input:disabled { opacity: .5; background: var(--surface-2); }
+  .cash-input-wrap .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 600; pointer-events: none; }
+  .cash-chips { display: flex; flex-wrap: wrap; gap: 8px; align-self: end; padding-bottom: 6px; }
+  .cash-chips .hint { width: 100%; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .chip { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+  .chip.exact { border-style: dashed; }
+  .chip:disabled { opacity: .45; }
+  .cash-change { text-align: right; min-width: 180px; }
+  .cash-change .k { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .cash-change .v { display: block; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+  .cash-change.ok .v { color: var(--success); }
+  .cash-change.short .v { color: var(--danger); font-size: 22px; }
+  .cash-change.idle .v { color: var(--muted); }
+  .bar-change { display: none; align-items: baseline; gap: 8px; padding: 8px 14px; border-radius: 999px; background: var(--success-soft); color: var(--success); font-weight: 600; white-space: nowrap; }
+  .bar-change.show { display: inline-flex; }
+  .bar-change .v { font-size: 18px; font-weight: 700; }
 
   /* Recent sales */
   .sales-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
@@ -164,7 +205,7 @@
   .pill.edited { background: var(--warn-soft); color: var(--warn); }
   .pill.void { background: var(--danger-soft); color: var(--danger); }
   .btn-sm { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 13px; font-weight: 500; margin-left: 6px; }
-  .btn-sm:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .btn-sm:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
   .btn-sm.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
   .btn-sm.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
   .btn-sm.primary:hover:not(:disabled) { background: var(--accent-hover); color: var(--accent-text); }
@@ -175,21 +216,21 @@
   .edit-pay { height: 34px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); padding: 0 8px; font-size: 13px; }
 
   /* Checkout bar */
-  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--border); box-shadow: var(--shadow-bar); z-index: 10; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); box-shadow: var(--shadow-bar); z-index: 10; }
   .bar-inner { max-width: 1240px; margin: 0 auto; padding: 18px 32px; display: flex; align-items: center; gap: 36px; }
   .bar-stat { display: flex; flex-direction: column; }
   .bar-stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
   .bar-stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .bar-stat .v.total { font-size: 30px; letter-spacing: -0.02em; }
   .bar-spacer { flex: 1; }
-  .bar-buyer { display: flex; flex-direction: column; gap: 4px; min-width: 260px; }
+  .bar-buyer { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
   .bar-buyer label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
   .bar-buyer input { height: 42px; padding: 0 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); font-size: 16px; }
   .bar-buyer input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
   .bar-buyer input:disabled { opacity: .5; }
   .edit-buyer { height: 34px; width: 150px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 14px; }
   .edit-buyer:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .bar-pay { font-size: 15px; color: var(--muted); }
+  .bar-pay { font-size: 14px; color: var(--muted); }
   .bar-pay strong { color: var(--text); }
   .btn-sell {
     min-width: 260px; height: 62px; padding: 0 30px; border-radius: 12px; border: 0;
@@ -211,8 +252,9 @@
     border: 1px solid var(--border); box-shadow: var(--shadow); font-size: 14px; display: flex; gap: 10px; align-items: flex-start;
     animation: pop .18s ease-out;
   }
-  .toast-item.success { border-left: 4px solid var(--success); }
-  .toast-item.error { border-left: 4px solid var(--danger); }
+  .toast-item svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+  .toast-item.success svg { color: var(--success); }
+  .toast-item.error svg { color: var(--danger); }
   .toast-item .t { font-weight: 600; }
   .toast-item .d { color: var(--muted); margin-top: 2px; }
   @keyframes pop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
@@ -223,6 +265,8 @@
     .header { flex-direction: column; }
     .bar-inner { flex-wrap: wrap; gap: 16px; padding: 14px 16px; }
     .btn-sell { width: 100%; }
+    .cash-panel { grid-template-columns: 1fr; gap: 14px; }
+    .cash-change { text-align: left; }
   }
 </style>
 </head>
@@ -268,6 +312,21 @@
     </button>
   </div>
 
+  <div class="cash-panel" id="cashPanel">
+    <div class="cash-field">
+      <label for="cashInput">Cash received</label>
+      <div class="cash-input-wrap">
+        <input id="cashInput" type="number" inputmode="decimal" min="0" step="1" placeholder="0" autocomplete="off">
+        <span class="unit" id="cashUnit">Kč</span>
+      </div>
+    </div>
+    <div class="cash-chips" id="cashChips" aria-label="Quick amounts"></div>
+    <div class="cash-change idle" id="cashChange" aria-live="polite">
+      <span class="k">Change due</span>
+      <span class="v" id="cashChangeValue">—</span>
+    </div>
+  </div>
+
   <div class="sales-head">
     <h2 class="section-title">Recent sales</h2>
     <span class="sales-hint">Sold something by mistake? <strong>Edit</strong> changes the quantities (stock adjusts by the difference) · <strong>Void</strong> cancels the sale and re-adds the stock</span>
@@ -301,6 +360,7 @@
       <input id="buyerInput" type="text" maxlength="80" placeholder="Name of the buyer" autocomplete="off">
     </div>
     <div class="bar-spacer"></div>
+    <div class="bar-change" id="barChange"><span>Give back</span><span class="v" id="barChangeValue"></span></div>
     <div class="bar-pay">Paying by <strong id="barPay">Cash</strong></div>
     <button class="btn-sell" id="sellBtn" type="button" disabled>
       <span class="spinner" aria-hidden="true"></span>
@@ -343,6 +403,8 @@
     sales: [],                 // recent sales from the sheet: { id, timestamp, quantities, paymentMethod, total, status }
     editing: null,             // { id, quantities, paymentMethod, buyer } while a sale row is being edited
     payment: 'Cash',
+    cashReceived: null,        // number while the cashier has typed an amount, else null
+    lastChange: null,          // change due from the last completed cash sale, shown until the next input
     busy: false,
     demo: !CONFIG.SCRIPT_URL,
     session: { sales: 0, revenue: 0 }
@@ -354,7 +416,9 @@
     refreshBtn: $('refreshBtn'), payment: $('payment'), barCount: $('barCount'), barTotal: $('barTotal'),
     barPay: $('barPay'), sellBtn: $('sellBtn'), sellLabel: $('sellLabel'), toast: $('toast'),
     sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn'),
-    salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')], buyerInput: $('buyerInput')
+    salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')], buyerInput: $('buyerInput'),
+    cashPanel: $('cashPanel'), cashInput: $('cashInput'), cashUnit: $('cashUnit'), cashChips: $('cashChips'), cashChange: $('cashChange'), cashChangeValue: $('cashChangeValue'),
+    barChange: $('barChange'), barChangeValue: $('barChangeValue')
   };
   let cardRefs = [];
 
@@ -369,23 +433,28 @@
     renderPinBtn();
     return true;
   }
-  function renderPinBtn() { els.pinBtn.textContent = getPin() ? 'PIN ✓' : 'PIN'; }
+  function renderPinBtn() { els.pinBtn.textContent = getPin() ? 'PIN set' : 'PIN'; }
 
   // ───────────────────────── UI helpers ─────────────────────────
   function setStatus(kind, text) {
     els.status.className = 'status ' + kind;
     els.statusText.textContent = text;
   }
+  const ICONS = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>'
+  };
   function showBanner(kind, html) {
     els.banner.className = 'banner show ' + kind;
-    els.banner.innerHTML = html;
+    els.banner.innerHTML = (ICONS[kind === 'err' ? 'error' : 'warn']) + '<div>' + html + '</div>';
   }
   function hideBanner() { els.banner.className = 'banner'; els.banner.innerHTML = ''; }
 
   function toast(kind, title, detail, ms) {
     const el = document.createElement('div');
     el.className = 'toast-item ' + kind;
-    el.innerHTML = '<div><div class="t"></div><div class="d"></div></div>';
+    el.innerHTML = ICONS[kind] + '<div><div class="t"></div><div class="d"></div></div>';
     el.querySelector('.t').textContent = title;
     el.querySelector('.d').textContent = detail || '';
     els.toast.appendChild(el);
@@ -467,8 +536,59 @@
     }, { count: 0, total: 0 });
   }
 
+  // ── Cash received / change due ──
+  const NOTES = [100, 200, 500, 1000, 2000, 5000];
+  function quickAmounts(total) {
+    if (total <= 0) return [];
+    const out = [Math.ceil(total)];
+    NOTES.forEach(n => { const v = Math.ceil(total / n) * n; if (v > total && !out.includes(v)) out.push(v); });
+    return out.slice(0, 5);
+  }
+  function renderCash() {
+    const t = totals();
+    const isCash = state.payment === 'Cash';
+    els.cashPanel.hidden = !isCash;
+    els.barChange.classList.toggle('show', isCash && state.lastChange != null && t.count === 0);
+    if (state.lastChange != null) els.barChangeValue.textContent = money(state.lastChange);
+    if (!isCash) return;
+
+    const active = t.count > 0 && !state.busy;
+    els.cashInput.disabled = !active;
+    if (document.activeElement !== els.cashInput) els.cashInput.value = state.cashReceived == null ? '' : state.cashReceived;
+
+    els.cashChips.innerHTML = '';
+    const amounts = quickAmounts(t.total);
+    if (amounts.length) {
+      const hint = el('span', 'hint', 'Quick amounts'); els.cashChips.appendChild(hint);
+      amounts.forEach((a, i) => {
+        const b = el('button', 'chip' + (i === 0 ? ' exact' : ''), i === 0 ? 'Exact ' + money(a) : money(a));
+        b.type = 'button'; b.disabled = !active;
+        b.addEventListener('click', () => { state.cashReceived = a; state.lastChange = null; renderCash(); });
+        els.cashChips.appendChild(b);
+      });
+    }
+
+    let cls = 'idle', text = '—';
+    if (active && state.cashReceived != null) {
+      const diff = state.cashReceived - t.total;
+      if (diff >= 0) { cls = 'ok'; text = money(diff); }
+      else { cls = 'short'; text = 'Short by ' + money(-diff); }
+    }
+    els.cashChange.className = 'cash-change ' + cls;
+    els.cashChangeValue.textContent = text;
+  }
+  els.cashInput.addEventListener('input', () => {
+    const v = parseFloat(String(els.cashInput.value).replace(',', '.'));
+    state.cashReceived = Number.isFinite(v) && v >= 0 ? v : null;
+    state.lastChange = null;
+    renderCash();
+  });
+  els.cashInput.addEventListener('focus', () => els.cashInput.select());
+  els.cashUnit.textContent = fmt.formatToParts(0).filter(p => p.type === 'currency').map(p => p.value)[0] || CONFIG.CURRENCY;
+
   function renderBar() {
     const t = totals();
+    renderCash();
     els.barCount.textContent = t.count;
     els.barTotal.textContent = t.count ? money(t.total) : '–';
     els.barPay.textContent = state.payment;
@@ -694,6 +814,7 @@
       if (fromTyping) toast('error', 'Only ' + item.stock + ' available', item.name + ' quantity capped at current stock.', 2200);
     }
     item.qty = q;
+    state.lastChange = null;
     renderCard(i);
     renderBar();
     if (fromTyping) cardRefs[i].input.value = q;
@@ -703,6 +824,7 @@
     const btn = e.target.closest('.pay-btn');
     if (!btn || state.busy) return;
     state.payment = btn.dataset.pay;
+    state.lastChange = null;
     els.payment.querySelectorAll('.pay-btn').forEach(b => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
     renderBar();
   });
@@ -771,13 +893,18 @@
       quantities,
       paymentMethod: state.payment,
       buyer: els.buyerInput.value.trim(),
+      cashReceived: state.payment === 'Cash' && state.cashReceived != null ? state.cashReceived : null,
       total: Number(t.total.toFixed(2)),
       clientTime: new Date().toISOString(),
       pin: getPin()
     };
 
+    const change = payload.cashReceived != null ? Math.round((payload.cashReceived - t.total) * 100) / 100 : null;
+
     // Optimistic: deduct immediately, reset selectors, lock the UI while the request is in flight.
     state.items.forEach((it, i) => { it.stock -= quantities[i]; it.qty = 0; });
+    state.cashReceived = null;
+    state.lastChange = change != null && change >= 0 ? change : null;
     state.busy = true;
     renderAll();
 
@@ -786,7 +913,7 @@
       if (state.demo) {
         await new Promise(r => setTimeout(r, 650));
         const sale = { id: 'S-DEMO' + String(demoSales.length + 1).padStart(3, '0'), timestamp: new Date().toISOString(),
-          quantities: quantities.slice(), paymentMethod: state.payment, buyer: payload.buyer, total: payload.total, status: 'OK' };
+          quantities: quantities.slice(), paymentMethod: state.payment, buyer: payload.buyer, total: payload.total, status: 'OK', cashReceived: payload.cashReceived, change: change };
         demoSales.unshift(sale);
         data = demoSnapshot(sale);
       } else {
@@ -800,11 +927,14 @@
       els.buyerInput.value = '';
       state.session.sales += 1;
       state.session.revenue += saleTotal;
-      toast('success', 'Sale recorded · ' + money(saleTotal),
-        t.count + ' item' + (t.count === 1 ? '' : 's') + ' · ' + state.payment + (payload.buyer ? ' · ' + payload.buyer : '') + (state.demo ? ' (demo, not saved)' : ''));
+      toast('success', state.lastChange != null ? 'Give back ' + money(state.lastChange) : 'Sale recorded · ' + money(saleTotal),
+        (state.lastChange != null ? money(saleTotal) + ' paid with ' + money(payload.cashReceived) + ' · ' : '') +
+        t.count + ' item' + (t.count === 1 ? '' : 's') + ' · ' + state.payment + (payload.buyer ? ' · ' + payload.buyer : '') + (state.demo ? ' (demo, not saved)' : ''),
+        state.lastChange != null ? 6000 : 3500);
     } catch (err) {
       // Roll back the optimistic deduction so the cashier can retry.
       state.items.forEach((it, i) => { it.stock = snapshot[i].stock; it.qty = snapshot[i].qty; });
+      state.cashReceived = payload.cashReceived; state.lastChange = null;
       const msg = err.message || String(err);
       toast('error', 'Sale not saved', msg + ' — stock restored, please try again.', 6000);
       if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
