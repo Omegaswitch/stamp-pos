@@ -452,9 +452,28 @@
     if (v === null) return false;
     try { localStorage.setItem(PIN_KEY, v.trim()); } catch (e) {}
     renderPinBtn();
+    verifyPin();
     return true;
   }
-  function renderPinBtn() { els.pinBtn.textContent = getPin() ? 'PIN set' : 'PIN'; }
+  function renderPinBtn(label) { els.pinBtn.textContent = label || (getPin() ? 'PIN set' : 'PIN'); }
+  // Checks the stored PIN against the server without writing anything, so the cashier gets a clear yes/no.
+  async function verifyPin() {
+    const pin = getPin();
+    if (!pin) { toast('error', 'PIN cleared', 'Sales will be refused if the sheet requires a PIN.', 3500); return; }
+    if (state.demo) { toast('success', 'PIN saved', 'Demo mode — nothing to check it against.', 3000); return; }
+    renderPinBtn('Checking…'); els.pinBtn.disabled = true;
+    try {
+      const data = await apiPost({ action: 'ping', pin });
+      if (data && data.ok === true) toast('success', 'PIN accepted', 'You can record sales on this browser.', 3500);
+      else throw new Error((data && data.error) || 'Could not verify');
+    } catch (err) {
+      const msg = err.message || String(err);
+      toast('error', /PIN/i.test(msg) ? 'Wrong PIN' : 'Could not verify PIN', msg + (/PIN/i.test(msg) ? ' — click PIN to try again.' : ''), 6000);
+      if (/PIN/i.test(msg)) { try { localStorage.removeItem(PIN_KEY); } catch (e) {} }
+    } finally {
+      els.pinBtn.disabled = false; renderPinBtn();
+    }
+  }
 
   // ───────────────────────── UI helpers ─────────────────────────
   function setStatus(kind, text) {

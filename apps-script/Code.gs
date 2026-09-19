@@ -14,6 +14,7 @@
  *     { action: "void", saleId }                                             → cancels a sale, re-adds its stock
  *     { action: "edit", saleId, quantities: [..], paymentMethod?, buyer? }   → changes a sale, adjusts stock by the difference
  *     { action: "delete", saleId }                                           → removes a VOIDED sale's row from the log
+ *     { action: "ping" }                                                     → writes nothing; succeeds only if the PIN is right
  *   Every POST answers { ok, items, sales, sale } or { ok:false, error }.
  *
  * Run setupSheets() once from the editor to create both tabs (and to authorise the script).
@@ -63,8 +64,9 @@ function doPost(e) {
     ensureSalesLog_(log);
 
     var action = String(body.action || 'sale');
-    var sale;
-    if (action === 'sale') sale = recordSale_(inv, log, body);
+    var sale = null;
+    if (action === 'ping') sale = null;                 // PIN already checked above; nothing to write
+    else if (action === 'sale') sale = recordSale_(inv, log, body);
     else if (action === 'void') sale = voidSale_(inv, log, body);
     else if (action === 'edit') sale = editSale_(inv, log, body);
     else if (action === 'delete') sale = deleteSale_(log, body);
