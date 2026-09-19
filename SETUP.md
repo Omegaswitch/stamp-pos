@@ -80,6 +80,7 @@ Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...
 - Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
 - Edit `index.html` → push → Pages redeploys.
 - Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
+- Colours: the accent is the Order of Malta red sampled from the shield (`--accent`); errors, out-of-stock and voided rows use a separate maroon (`--danger`) so they never read as brand. Tokens live at the top of `index.html` (light + dark).
 - Font: Helvetica Neue → Helvetica → Arial system stack (no web font download). The logo is embedded in `index.html`.
 - Currency/locale: `CONFIG.CURRENCY` / `CONFIG.LOCALE` in `index.html` (set to CZK / cs-CZ). Timezone for the script: `apps-script/appsscript.json`.
 
