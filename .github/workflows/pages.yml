@@ -39,8 +39,7 @@ jobs:
           BUILD="${GITHUB_SHA::7}"
           sed -i "s|<meta name=\"build\" content=\"dev\">|<meta name=\"build\" content=\"${BUILD}\">|" dist/index.html
           grep -q "content=\"${BUILD}\"" dist/index.html || { echo "::error::build stamp not injected"; exit 1; }
-          printf '{"build":"%s","builtAt":"%s"}
-' "$BUILD" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/version.json
+          echo "{\"build\":\"$BUILD\",\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > dist/version.json
           echo "Build $BUILD"
           if [ -n "$DEPLOYMENT_ID" ]; then
             URL="https://script.google.com/macros/s/${DEPLOYMENT_ID}/exec"
