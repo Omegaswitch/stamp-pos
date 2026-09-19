@@ -7,6 +7,7 @@
 <meta name="description" content="Desktop point-of-sale tracker for stamps, backed by Google Sheets via Apps Script.">
 <meta name="build" content="dev">
 <meta http-equiv="Cache-Control" content="no-cache">
+<script>try{var t=localStorage.getItem("stampPos.theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
 <style>
   :root {
     --bg: #f3f4f6;
@@ -302,6 +303,7 @@
       <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
       <button class="btn-ghost" id="refreshBtn" type="button">Refresh stock</button>
       <button class="btn-ghost" id="pinBtn" type="button" title="Cashier PIN (only needed if one is set in the Apps Script)">PIN</button>
+      <button class="btn-ghost" id="themeBtn" type="button" title="Switch light / dark / follow system"></button>
       <span class="build" id="buildTag" title="Build (commit) this page was published from"></span>
     </div>
   </header>
@@ -970,6 +972,21 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); markAsSold(); }
   });
+
+  // ── Theme: system → light → dark, remembered in this browser ──
+  const THEME_KEY = 'stampPos.theme';
+  function getTheme() { try { return localStorage.getItem(THEME_KEY) || 'system'; } catch (e) { return 'system'; } }
+  function applyTheme(t) {
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    else document.documentElement.removeAttribute('data-theme');
+    try { t === 'system' ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, t); } catch (e) {}
+    $('themeBtn').textContent = t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'Auto theme';
+  }
+  $('themeBtn').addEventListener('click', () => {
+    const order = ['system', 'light', 'dark'];
+    applyTheme(order[(order.indexOf(getTheme()) + 1) % order.length]);
+  });
+  applyTheme(getTheme());
 
   // ── Build stamp + update check (build id is injected by the Pages workflow; "dev" when opened locally) ──
   const BUILD = (document.querySelector('meta[name="build"]') || {}).content || 'dev';
