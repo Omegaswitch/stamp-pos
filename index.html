@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stamp Sales</title>
 <meta name="description" content="Desktop point-of-sale tracker for stamps, backed by Google Sheets via Apps Script.">
+<meta name="build" content="dev">
+<meta http-equiv="Cache-Control" content="no-cache">
 <style>
   :root {
     --bg: #f3f4f6;
@@ -93,6 +95,16 @@
   .btn-ghost:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
   .btn-ghost:disabled { opacity: .5; }
 
+  .build { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .02em; }
+  .update {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 30;
+    display: none; align-items: center; gap: 14px; padding: 10px 12px 10px 16px; border-radius: 999px;
+    background: var(--text); color: var(--bg); font-size: 14px; font-weight: 500; box-shadow: 0 8px 22px rgba(0,0,0,.25);
+    animation: pop .18s ease-out;
+  }
+  .update.show { display: flex; }
+  .update button { height: 32px; padding: 0 14px; border-radius: 999px; border: 0; background: var(--accent); color: var(--accent-text); font-weight: 700; }
+  .update button:hover { background: var(--accent-hover); }
   .banner { display: none; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px; font-size: 14px; }
   .banner.show { display: flex; }
   .banner svg { width: 18px; height: 18px; flex: none; }
@@ -290,6 +302,7 @@
       <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
       <button class="btn-ghost" id="refreshBtn" type="button">Refresh stock</button>
       <button class="btn-ghost" id="pinBtn" type="button" title="Cashier PIN (only needed if one is set in the Apps Script)">PIN</button>
+      <span class="build" id="buildTag" title="Build (commit) this page was published from"></span>
     </div>
   </header>
 
@@ -372,6 +385,10 @@
 </div>
 
 <div class="toast" id="toast" aria-live="polite"></div>
+<div class="update" id="updateBar" role="status">
+  <span>A newer version of this page is available.</span>
+  <button type="button" id="updateBtn">Reload</button>
+</div>
 
 <script>
 (function () {
@@ -953,6 +970,27 @@
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); markAsSold(); }
   });
+
+  // ── Build stamp + update check (build id is injected by the Pages workflow; "dev" when opened locally) ──
+  const BUILD = (document.querySelector('meta[name="build"]') || {}).content || 'dev';
+  $('buildTag').textContent = BUILD === 'dev' ? 'local build' : 'build ' + BUILD;
+  let newerBuild = null;
+  async function checkForUpdate() {
+    if (BUILD === 'dev' || newerBuild) return;
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = await r.json();
+      if (v && v.build && v.build !== BUILD) { newerBuild = v.build; $('updateBar').classList.add('show'); }
+    } catch (e) { /* offline or not deployed via CI: ignore */ }
+  }
+  $('updateBtn').addEventListener('click', () => {
+    // A query string forces the browser past its cached copy of index.html.
+    location.replace(location.pathname + '?v=' + encodeURIComponent(newerBuild || Date.now()));
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+  setInterval(checkForUpdate, 5 * 60 * 1000);
+  checkForUpdate();
 
   loadInventory();
 })();
