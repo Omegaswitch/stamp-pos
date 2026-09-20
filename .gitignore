@@ -4,3 +4,7 @@ Thumbs.db
 apps-script/.clasp.json
 node_modules/
 dist/
+
+# Skills installed per-session with `npx skills add` — tooling, not product
+.agents/
+skills-lock.json
