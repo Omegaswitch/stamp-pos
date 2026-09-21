@@ -95,6 +95,12 @@
   .btn-ghost { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 500; }
   .btn-ghost:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-2); }
   .btn-ghost:disabled { opacity: .5; }
+  /* The label cycles Auto theme / Light / Dark. Stacking an invisible copy of the
+     longest label under the live one fixes the button's width to that label in
+     whatever font actually resolves, so switching themes cannot re-wrap the row. */
+  .theme { display: inline-grid; place-items: center; }
+  .theme > * { grid-area: 1 / 1; }
+  .theme-sizer { visibility: hidden; }
 
   .build { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .02em; }
   .update {
@@ -303,7 +309,7 @@
       <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting…</span></div>
       <button class="btn-ghost" id="refreshBtn" type="button">Refresh stock</button>
       <button class="btn-ghost" id="pinBtn" type="button" title="Cashier PIN (only needed if one is set in the Apps Script)">PIN</button>
-      <button class="btn-ghost" id="themeBtn" type="button" title="Switch light / dark / follow system"></button>
+      <button class="btn-ghost theme" id="themeBtn" type="button" title="Switch light / dark / follow system"><span class="theme-sizer" aria-hidden="true">Auto theme</span><span id="themeLabel"></span></button>
       <span class="build" id="buildTag" title="Build (commit) this page was published from"></span>
     </div>
   </header>
@@ -999,7 +1005,7 @@
     if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
     else document.documentElement.removeAttribute('data-theme');
     try { t === 'system' ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, t); } catch (e) {}
-    $('themeBtn').textContent = t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'Auto theme';
+    $('themeLabel').textContent = t === 'light' ? 'Light' : t === 'dark' ? 'Dark' : 'Auto theme';
   }
   $('themeBtn').addEventListener('click', () => {
     const order = ['system', 'light', 'dark'];
