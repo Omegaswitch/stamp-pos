@@ -76,7 +76,8 @@ Check: open the `/exec` URL in a tab — you should see `{"ok":true,"items":[...
   - **Delete** (only on voided rows) → confirm → the row is removed from the list *and* from the Sales Log sheet. Stock is untouched (it was restored by the void).
   - All three need the cashier PIN if one is set.
 - **Cash sales:** with **Cash** selected, a *Cash received* panel appears under the payment buttons. Type the amount (or tap a quick-amount chip: exact, next 100/200/500/1000/2000) and the **Change due** shows instantly; after *Mark as Sold* the amount to give back stays in the bar until the next sale starts. Cash received and change are saved in Sales Log columns `Cash Received` / `Change`.
-- **Buyer name:** optional field in the checkout bar, saved in the `Buyer` column and shown in Recent sales; editable via **Edit**.
+- **Gifts:** with **Gift** selected nothing is charged. A note replaces the cash panel, the checkout total drops to zero (the nominal value of the stamps stays visible in that note), the button reads *Record gift*, and the sale is written with its quantities at a `Total Amount` of 0. The **buyer's name is required** — the money that arrives later is matched to the row by that name — so the button stays disabled until it is filled in. Switching an existing sale to Gift via **Edit** re-prices it to zero and needs a name too. Both rules are enforced again in Apps Script, not only in the page.
+- **Buyer name:** optional field in the checkout bar, saved in the `Buyer` column and shown in Recent sales; editable via **Edit**. Required when the payment method is **Gift**.
 - Edit `apps-script/Code.gs` → push → the Web App updates in place (same URL).
 - Edit `index.html` → push → Pages redeploys.
 - Restock / change prices in the **Inventory** tab → click **Refresh stock** in the app.
@@ -105,5 +106,5 @@ Open `index.html` directly and set `CONFIG.SCRIPT_URL` by hand (keep the `// @in
 
 - The repo and the Pages site are public; the Apps Script `/exec` URL is visible in the page source. That's unavoidable for a static page — the `POS_PIN` is what gates writes. Reads (stock + prices) are open to anyone with the URL.
 - `CLASPRC_JSON` is a Google OAuth token for your account, scoped to Apps Script. Keep it as a GitHub secret only; never commit `.clasprc.json` or `apps-script/.clasp.json` (both are gitignored).
-- **Sales Log columns:** `Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount | Sale ID | Status | Updated At | Buyer | Cash Received | Change`. Status is `OK`, `EDITED` or `VOID`. Logs created before these columns existed are upgraded automatically on the next request.
+- **Sales Log columns:** `Timestamp | Qty Stamp 1 | Qty Stamp 2 | Qty Stamp 3 | Payment Method | Total Amount | Sale ID | Status | Updated At | Buyer | Cash Received | Change`. Status is `OK`, `EDITED` or `VOID`. `Payment Method` is `Cash`, `Card`, `Bank Transfer / QR` or `Gift`; a `Gift` row always has `Total Amount` 0 and a non-empty `Buyer`, so takings can be summed straight down the column without filtering gifts out. Logs created before these columns existed are upgraded automatically on the next request.
 - Sales are serialised with `LockService` and validated server-side, so concurrent cashiers can't oversell.

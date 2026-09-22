@@ -173,6 +173,19 @@
   .pay-btn:hover { border-color: var(--border-strong); }
   .pay-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); }
 
+  /* Gift (shown while Gift is selected): nothing is taken now, the donation is matched by name later */
+  .gift-panel {
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    margin: -18px 0 30px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow); font-size: 14px; color: var(--muted);
+  }
+  .gift-panel[hidden] { display: none; }
+  .gift-panel p { margin: 0; max-width: 62ch; line-height: 1.5; }
+  .gift-panel strong { color: var(--text); font-weight: 600; }
+  .gift-panel .nominal { margin-left: auto; text-align: right; white-space: nowrap; }
+  .gift-panel .nominal .k { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .gift-panel .nominal .v { display: block; font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; line-height: 1.2; }
+
   /* Cash received / change due (shown while Cash is selected) */
   .cash-panel {
     display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px;
@@ -334,6 +347,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7M17 21h.01"/></svg>
       Bank Transfer / QR
     </button>
+    <button type="button" class="pay-btn" data-pay="Gift" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M12 8v13"/><path d="M12 8S10.5 4 8.5 4a2.5 2.5 0 0 0 0 5M12 8s1.5-4 3.5-4a2.5 2.5 0 0 1 0 5"/></svg>
+      Gift
+    </button>
   </div>
 
   <div class="cash-panel" id="cashPanel">
@@ -349,6 +366,13 @@
       <span class="k">Change due</span>
       <span class="v" id="cashChangeValue">—</span>
     </div>
+  </div>
+
+  <div class="gift-panel" id="giftPanel" hidden>
+    <p>No money is taken at the till. The stamps are handed over and the donation that follows is matched
+       to the <strong>buyer’s name</strong>, so this is logged with its quantities at a total of zero.
+       The name is required.</p>
+    <span class="nominal"><span class="k">Nominal value</span><span class="v" id="giftNominal">–</span></span>
   </div>
 
   <div class="sales-head">
@@ -380,7 +404,7 @@
     <div class="bar-stat"><span class="k">Items</span><span class="v" id="barCount">0</span></div>
     <div class="bar-stat"><span class="k">Total</span><span class="v total" id="barTotal">–</span></div>
     <div class="bar-buyer">
-      <label for="buyerInput">Buyer (optional)</label>
+      <label for="buyerInput" id="buyerLabel">Buyer (optional)</label>
       <input id="buyerInput" type="text" maxlength="80" placeholder="Name of the buyer" autocomplete="off">
     </div>
     <div class="bar-spacer"></div>
@@ -424,7 +448,11 @@
     { name: 'Christmas Folder Set', price: 218, stock: 250 }
   ];
 
-  const PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
+  const PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR', 'Gift'];
+  // A gift takes nothing at the till: as a non-profit we cannot turn the exchange into income, so the
+  // stamps go out, the donor sends money separately, and that payment is matched back to this sale by
+  // the buyer's name. Logged with its quantities like any sale, at a total of zero, name mandatory.
+  const GIFT = 'Gift';
 
   const state = {
     items: [],                 // { name, price, stock, qty }
@@ -445,6 +473,7 @@
     barPay: $('barPay'), sellBtn: $('sellBtn'), sellLabel: $('sellLabel'), toast: $('toast'),
     sessionSales: $('sessionSales'), sessionRevenue: $('sessionRevenue'), pinBtn: $('pinBtn'),
     salesBody: $('salesBody'), salesHeads: [$('salesH0'), $('salesH1'), $('salesH2')], buyerInput: $('buyerInput'),
+    giftPanel: $('giftPanel'), giftNominal: $('giftNominal'), buyerLabel: $('buyerLabel'),
     cashPanel: $('cashPanel'), cashInput: $('cashInput'), cashUnit: $('cashUnit'), cashChips: $('cashChips'), cashChange: $('cashChange'), cashChangeValue: $('cashChangeValue'),
     barChange: $('barChange'), barChangeValue: $('barChangeValue')
   };
@@ -583,6 +612,10 @@
     }, { count: 0, total: 0 });
   }
 
+  /** What goes in the sheet's Total Amount column: zero for a gift, the list price otherwise. */
+  function charged(total) { return state.payment === GIFT ? 0 : total; }
+  function giftNeedsName() { return state.payment === GIFT && !els.buyerInput.value.trim(); }
+
   // ── Cash received / change due ──
   const NOTES = [100, 200, 500, 1000, 2000, 5000];
   function quickAmounts(total) {
@@ -633,15 +666,25 @@
   els.cashInput.addEventListener('focus', () => els.cashInput.select());
   els.cashUnit.textContent = fmt.formatToParts(0).filter(p => p.type === 'currency').map(p => p.value)[0] || CONFIG.CURRENCY;
 
+  function renderGift() {
+    const t = totals();
+    const isGift = state.payment === GIFT;
+    els.giftPanel.hidden = !isGift;
+    if (isGift) els.giftNominal.textContent = t.count ? money(t.total) : '–';
+  }
+
   function renderBar() {
     const t = totals();
     renderCash();
+    renderGift();
+    const isGift = state.payment === GIFT;
     els.barCount.textContent = t.count;
-    els.barTotal.textContent = t.count ? money(t.total) : '–';
+    els.barTotal.textContent = t.count ? money(charged(t.total)) : '–';
     els.barPay.textContent = state.payment;
-    els.sellBtn.disabled = state.busy || t.count === 0;
+    els.buyerLabel.textContent = isGift ? 'Buyer (required for a gift)' : 'Buyer (optional)';
+    els.sellBtn.disabled = state.busy || t.count === 0 || giftNeedsName();
     els.sellBtn.classList.toggle('loading', state.busy);
-    els.sellLabel.textContent = state.busy ? 'Saving sale…' : 'Mark as Sold';
+    els.sellLabel.textContent = state.busy ? 'Saving sale…' : isGift ? 'Record gift' : 'Mark as Sold';
     els.refreshBtn.disabled = state.busy;
     els.buyerInput.disabled = state.busy;
     els.sessionSales.textContent = state.session.sales;
@@ -812,6 +855,10 @@
     if (!e) return;
     const total = e.quantities.reduce((s, q) => s + q, 0);
     if (total === 0) { toast('error', 'Quantities are all zero', 'Use Void to cancel the whole sale.', 4000); return; }
+    if (e.paymentMethod === GIFT && !(e.buyer || '').trim()) {
+      toast('error', 'A gift needs the buyer\'s name', 'The donation that follows is matched to it.', 4000);
+      return;
+    }
     const same = e.quantities.every((q, i) => q === sale.quantities[i]) && e.paymentMethod === sale.paymentMethod && (e.buyer || '').trim() === (sale.buyer || '');
     if (same) { state.editing = null; renderSales(); return; }
     runAction({ action: 'edit', saleId: sale.id, quantities: e.quantities, paymentMethod: e.paymentMethod, buyer: (e.buyer || '').trim() },
@@ -841,7 +888,7 @@
       sale.quantities = p.quantities.slice();
       sale.paymentMethod = p.paymentMethod || sale.paymentMethod;
       if (p.buyer != null) sale.buyer = p.buyer;
-      sale.total = sale.quantities.reduce((s, q, i) => s + q * state.items[i].price, 0);
+      sale.total = sale.paymentMethod === GIFT ? 0 : sale.quantities.reduce((s, q, i) => s + q * state.items[i].price, 0);
       sale.status = 'EDITED';
     } else if (p.action === 'delete') {
       if (sale.status !== 'VOID') return { ok: false, error: 'Only voided sales can be deleted' };
@@ -933,6 +980,12 @@
     const t = totals();
     if (t.count === 0) return;
 
+    if (giftNeedsName()) {
+      toast('error', 'A gift needs the buyer\'s name', 'The donation that follows is matched to it.', 4000);
+      els.buyerInput.focus();
+      return;
+    }
+
     const quantities = state.items.map(it => it.qty);
     const snapshot = state.items.map(it => ({ stock: it.stock, qty: it.qty }));
     const payload = {
@@ -941,7 +994,7 @@
       paymentMethod: state.payment,
       buyer: els.buyerInput.value.trim(),
       cashReceived: state.payment === 'Cash' && state.cashReceived != null ? state.cashReceived : null,
-      total: Number(t.total.toFixed(2)),
+      total: Number(charged(t.total).toFixed(2)),
       clientTime: new Date().toISOString(),
       pin: getPin()
     };
@@ -970,11 +1023,14 @@
 
       // Sync with the authoritative stock + sales list from the sheet (handles concurrent cashiers).
       applyServer(data);
-      const saleTotal = (data.sale && Number(data.sale.total)) || t.total;
+      // Not `||`: a gift's total is a legitimate 0, which would fall through to the list price.
+      const saleTotal = data.sale && data.sale.total != null ? Number(data.sale.total) : charged(t.total);
       els.buyerInput.value = '';
       state.session.sales += 1;
       state.session.revenue += saleTotal;
-      toast('success', state.lastChange != null ? 'Give back ' + money(state.lastChange) : 'Sale recorded · ' + money(saleTotal),
+      toast('success', state.lastChange != null ? 'Give back ' + money(state.lastChange)
+          : payload.paymentMethod === GIFT ? 'Gift recorded · ' + payload.buyer
+          : 'Sale recorded · ' + money(saleTotal),
         (state.lastChange != null ? money(saleTotal) + ' paid with ' + money(payload.cashReceived) + ' · ' : '') +
         t.count + ' item' + (t.count === 1 ? '' : 's') + ' · ' + state.payment + (payload.buyer ? ' · ' + payload.buyer : '') + (state.demo ? ' (demo, not saved)' : ''),
         state.lastChange != null ? 6000 : 3500);
@@ -992,6 +1048,7 @@
   }
 
   els.sellBtn.addEventListener('click', markAsSold);
+  els.buyerInput.addEventListener('input', renderBar);   // a gift is blocked until the name is there
   els.refreshBtn.addEventListener('click', loadInventory);
   els.pinBtn.addEventListener('click', () => askPin());
   renderPinBtn();

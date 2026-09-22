@@ -4,13 +4,14 @@
  * Bound to a Google Sheet with two tabs:
  *   "Inventory": A=Item Name | B=Unit Price | C=Current Stock   (rows 2–4 = the 3 stamps)
  *   "Sales Log": A=Timestamp | B=Qty Stamp 1 | C=Qty Stamp 2 | D=Qty Stamp 3 | E=Payment Method
- *                | F=Total Amount | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At | J=Buyer
+ *                | F=Total Amount (always 0 for a Gift) | G=Sale ID | H=Status (OK / EDITED / VOID) | I=Updated At | J=Buyer
  *                | K=Cash Received | L=Change   (only for cash sales where the cashier entered the amount)
  *
  * Endpoints (deployed as a Web App, "Execute as: Me", "Who has access: Anyone"):
  *   GET  → { ok, items: [{ name, price, stock }, ×3], sales: [recent sales, newest first] }
  *   POST body (text/plain JSON), all require `pin` when POS_PIN is configured:
  *     { action: "sale", quantities: [q1,q2,q3], paymentMethod, buyer?, cashReceived? } → records a sale, deducts stock
+ *       paymentMethod "Gift" logs the stamps at a Total Amount of 0 and requires `buyer`
  *     { action: "void", saleId }                                             → cancels a sale, re-adds its stock
  *     { action: "edit", saleId, quantities: [..], paymentMethod?, buyer? }   → changes a sale, adjusts stock by the difference
  *     { action: "delete", saleId }                                           → removes a VOIDED sale's row from the log
@@ -23,7 +24,16 @@
 var INVENTORY_SHEET = 'Inventory';
 var SALES_SHEET = 'Sales Log';
 var ITEM_COUNT = 3;
-var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR'];
+var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR', 'Gift'];
+
+/**
+ * A gift is not a sale: the stamps are handed over and nothing is taken at the till,
+ * because a non-profit may not turn the exchange into income. The donor sends money
+ * separately, and that payment is matched back to this row by the buyer's name — so a
+ * gift is logged with its quantities like any other sale, at a Total Amount of 0, and
+ * the name is mandatory. Without it the row can never be reconciled.
+ */
+var GIFT_PAYMENT = 'Gift';
 var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At', 'Buyer', 'Cash Received', 'Change'];
 var SALES_COLS = SALES_HEADERS.length;
 var RECENT_SALES = 15;
@@ -87,6 +97,7 @@ function recordSale_(inv, log, body) {
   var quantities = normaliseQuantities_(body.quantities);
   var paymentMethod = checkPayment_(body.paymentMethod);
   var buyer = cleanBuyer_(body.buyer);
+  requireGiftBuyer_(paymentMethod, buyer);
   if (sum_(quantities) === 0) throw new Error('No items in the sale');
 
   var items = readInventoryRows_(inv);
@@ -95,7 +106,7 @@ function recordSale_(inv, log, body) {
       throw new Error('Not enough stock for ' + items[i].name + ' (requested ' + quantities[i] + ', available ' + items[i].stock + ')');
     }
   }
-  var total = computeTotal_(items, quantities);
+  var total = chargedTotal_(computeTotal_(items, quantities), paymentMethod);
 
   writeStock_(inv, items.map(function (it, i) { return it.stock - quantities[i]; }));
 
@@ -133,6 +144,7 @@ function editSale_(inv, log, body) {
   if (sum_(quantities) === 0) throw new Error('Quantities are all zero — use Void to cancel the sale');
   var paymentMethod = body.paymentMethod ? checkPayment_(body.paymentMethod) : old.paymentMethod;
   var buyer = body.buyer != null ? cleanBuyer_(body.buyer) : old.buyer;
+  requireGiftBuyer_(paymentMethod, buyer);   // also catches switching an existing sale over to Gift
 
   // Only the difference moves in or out of stock.
   var items = readInventoryRows_(inv);
@@ -144,7 +156,8 @@ function editSale_(inv, log, body) {
     }
     newStock.push(items[i].stock - delta);
   }
-  var total = computeTotal_(items, quantities);   // re-priced at current unit prices
+  // Re-priced at current unit prices — or back to zero if this is (now) a gift.
+  var total = chargedTotal_(computeTotal_(items, quantities), paymentMethod);
 
   writeStock_(inv, newStock);
   log.getRange(found.row, 2, 1, 5).setValues([[quantities[0], quantities[1], quantities[2], paymentMethod, total]]);
@@ -287,6 +300,18 @@ function checkPayment_(value) {
   var p = String(value || '').trim();
   if (ALLOWED_PAYMENTS.indexOf(p) === -1) throw new Error('Invalid payment method: "' + p + '"');
   return p;
+}
+
+/** Nothing is taken at the till for a gift, so it is logged at zero whatever the stamps list at. */
+function chargedTotal_(total, paymentMethod) {
+  return paymentMethod === GIFT_PAYMENT ? 0 : total;
+}
+
+/** A gift with no name on it can never be matched to the money that arrives later. */
+function requireGiftBuyer_(paymentMethod, buyer) {
+  if (paymentMethod === GIFT_PAYMENT && !buyer) {
+    throw new Error('A gift needs the buyer\'s name — the payment is matched to it later');
+  }
 }
 
 function normaliseQuantities_(list) {
