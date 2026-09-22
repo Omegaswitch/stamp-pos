@@ -27,11 +27,12 @@ var ITEM_COUNT = 3;
 var ALLOWED_PAYMENTS = ['Cash', 'Card', 'Bank Transfer / QR', 'Gift'];
 
 /**
- * A gift is not a sale: the stamps are handed over and nothing is taken at the till,
- * because a non-profit may not turn the exchange into income. The donor sends money
- * separately, and that payment is matched back to this row by the buyer's name — so a
- * gift is logged with its quantities like any other sale, at a Total Amount of 0, and
- * the name is mandatory. Without it the row can never be reconciled.
+ * A gift records what was bought, how many, and for whom — everything except the money.
+ * A non-profit may not turn the exchange into income, so nothing is charged here: the
+ * buyer pays on the card terminal instead, the minimum sum plus a donation on top. That
+ * terminal payment is reconciled to this row afterwards by the buyer's name, so a gift is
+ * logged with its quantities like any other sale, at a Total Amount of 0, and the name is
+ * mandatory. Without it the row can never be matched to the money.
  */
 var GIFT_PAYMENT = 'Gift';
 var SALES_HEADERS = ['Timestamp', 'Qty Stamp 1', 'Qty Stamp 2', 'Qty Stamp 3', 'Payment Method', 'Total Amount', 'Sale ID', 'Status', 'Updated At', 'Buyer', 'Cash Received', 'Change'];
