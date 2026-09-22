@@ -381,7 +381,7 @@
     <span class="sales-hint">Sold something by mistake? <strong>Edit</strong> changes the quantities (stock adjusts by the difference) · <strong>Void</strong> cancels the sale and re-adds the stock</span>
   </div>
   <div class="sales-wrap">
-    <table class="sales-table" id="salesTable">
+    <table class="sales-table">
       <thead>
         <tr>
           <th>Time</th>
@@ -492,6 +492,14 @@
     verifyPin();
     return true;
   }
+
+  /** Error toast, plus the PIN re-prompt when the server says the PIN is what failed. */
+  function failToast(title, err, suffix) {
+    const msg = err.message || String(err);
+    toast('error', title, msg + (suffix || ''), 6000);
+    if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
+  }
+
   function renderPinBtn(label) { els.pinBtn.textContent = label || (getPin() ? 'PIN set' : 'PIN'); }
   // Checks the stored PIN against the server without writing anything, so the cashier gets a clear yes/no.
   async function verifyPin() {
@@ -667,18 +675,12 @@
   els.cashInput.addEventListener('focus', () => els.cashInput.select());
   els.cashUnit.textContent = fmt.formatToParts(0).filter(p => p.type === 'currency').map(p => p.value)[0] || CONFIG.CURRENCY;
 
-  function renderGift() {
-    const t = totals();
-    const isGift = state.payment === GIFT;
-    els.giftPanel.hidden = !isGift;
-    if (isGift) els.giftNominal.textContent = t.count ? money(t.total) : '–';
-  }
-
   function renderBar() {
     const t = totals();
     renderCash();
-    renderGift();
     const isGift = state.payment === GIFT;
+    els.giftPanel.hidden = !isGift;
+    if (isGift) els.giftNominal.textContent = t.count ? money(t.total) : '–';
     els.barCount.textContent = t.count;
     els.barTotal.textContent = t.count ? money(charged(t.total)) : '–';
     els.barPay.textContent = state.payment;
@@ -829,9 +831,7 @@
       toast('success', successTitle, successDetail + (state.demo ? ' (demo, not saved)' : ''));
       return true;
     } catch (err) {
-      const msg = err.message || String(err);
-      toast('error', 'Not saved', msg, 6000);
-      if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
+      failToast('Not saved', err);
       return false;
     } finally {
       state.busy = false;
@@ -1039,9 +1039,7 @@
       // Roll back the optimistic deduction so the cashier can retry.
       state.items.forEach((it, i) => { it.stock = snapshot[i].stock; it.qty = snapshot[i].qty; });
       state.cashReceived = payload.cashReceived; state.lastChange = null;
-      const msg = err.message || String(err);
-      toast('error', 'Sale not saved', msg + ' — stock restored, please try again.', 6000);
-      if (/\bPIN\b/i.test(msg)) setTimeout(() => askPin(msg + '\n\nEnter the cashier PIN:'), 50);
+      failToast('Sale not saved', err, ' — stock restored, please try again.');
     } finally {
       state.busy = false;
       renderAll();
