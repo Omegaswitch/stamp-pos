@@ -84,7 +84,7 @@ function doPost(e) {
     else throw new Error('Unknown action: ' + action);
 
     SpreadsheetApp.flush();
-    return jsonResponse({ ok: true, items: readInventory_(), sales: readSales_(log), sale: sale });
+    return jsonResponse({ ok: true, items: readInventoryRows_(inv), sales: readSales_(log), sale: sale });
   } catch (err) {
     return jsonResponse({ ok: false, error: String(err && err.message || err) });
   } finally {
@@ -248,14 +248,28 @@ function findSale_(log, saleId) {
 }
 
 /**
- * Makes sure the Sales Log has the ID/Status/Updated columns and that every existing
- * row has a Sale ID (so logs created before this feature can still be voided/edited).
+ * Makes sure the Sales Log has the ID/Status/Updated columns, and gives the rows that
+ * predate those columns a Sale ID so they can still be voided and edited.
+ *
+ * This runs on every single request, so it must not scale with the log. It used to read
+ * columns G:H of every row in the sheet each time, which made each sale slower than the
+ * last as the log grew. The backfill only ever has work to do at the moment the columns
+ * are introduced, so it runs only then; the steady-state cost is one header read.
+ *
+ * ponytail: a row pasted in by hand afterwards gets no Sale ID and cannot be voided or
+ * edited — run backfillSaleIds_() once from the editor if that ever happens.
  */
 function ensureSalesLog_(log) {
-  if (String(log.getRange(1, 7).getValue()) !== 'Sale ID' || String(log.getRange(1, SALES_COLS).getValue()) !== SALES_HEADERS[SALES_COLS - 1]) {
-    log.getRange(1, 1, 1, SALES_COLS).setValues([SALES_HEADERS]).setFontWeight('bold');
-    log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  }
+  var header = log.getRange(1, 1, 1, SALES_COLS).getValues()[0];
+  if (String(header[6]) === 'Sale ID' && String(header[SALES_COLS - 1]) === SALES_HEADERS[SALES_COLS - 1]) return;
+
+  log.getRange(1, 1, 1, SALES_COLS).setValues([SALES_HEADERS]).setFontWeight('bold');
+  log.getRange('I2:I').setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  backfillSaleIds_(log);
+}
+
+/** One-off repair: give every row that lacks one a Sale ID and a Status. */
+function backfillSaleIds_(log) {
   var last = log.getLastRow();
   if (last < 2) return;
   var rng = log.getRange(2, 7, last - 1, 2);
@@ -374,6 +388,7 @@ function setupSheets() {
     log.autoResizeColumns(1, SALES_COLS);
   }
   ensureSalesLog_(log);
+  backfillSaleIds_(log);   // run by hand, so repair the whole log while we are here
 
   // Remove the default empty "Sheet1" if it is still around and unused.
   var def = ss.getSheetByName('Sheet1');
