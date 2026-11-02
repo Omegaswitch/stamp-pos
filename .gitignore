@@ -8,3 +8,4 @@ dist/
 # Skills installed per-session with `npx skills add` — tooling, not product
 .agents/
 skills-lock.json
+graphify-out/cache/
